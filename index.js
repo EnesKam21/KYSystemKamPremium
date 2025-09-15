@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-// Key üretici
+
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -12,7 +12,7 @@ function generateKey(seed) {
   return key;
 }
 
-// Saatlik key
+
 function getHourlyKey() {
   const date = new Date();
   const seed = parseInt(
@@ -24,24 +24,24 @@ function getHourlyKey() {
   return generateKey(seed);
 }
 
-// Middleware → Bypass check
+
 app.use((req, res, next) => {
   const ref = req.get("referer") || "";
   const ua = req.get("user-agent") || "";
 
-  // Eğer exploit (Roblox) geldiyse → raw key dönecek, sorun yok
+  
   if (ua.includes("Roblox")) return next();
 
-  // Eğer Linkvertise üzerinden gelmemişse → bypass sitesine at
+  
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Normal devam et
+  
   next();
 });
 
-// Ana sayfa → premium HTML
+
 app.get("/", (req, res) => {
   const key = getHourlyKey();
   res.send(`
@@ -58,7 +58,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Raw key → executor burdan çeker
+
 app.get("/raw", (req, res) => {
   res.send(getHourlyKey());
 });

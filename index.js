@@ -11,15 +11,13 @@ function generateKey(seed) {
   return key;
 }
 
-function getTenMinKey() {
+function getHourlyKey() {
   const date = new Date();
-  const tenMinBlock = Math.floor(date.getUTCMinutes() / 10); 
   const seed = parseInt(
     date.getUTCFullYear().toString() +
     (date.getUTCMonth() + 1).toString().padStart(2, "0") +
     date.getUTCDate().toString().padStart(2, "0") +
-    date.getUTCHours().toString().padStart(2, "0") +
-    tenMinBlock.toString()
+    date.getUTCHours().toString()
   );
   return generateKey(seed);
 }
@@ -38,7 +36,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (req, res) => {
-  const key = getTenMinKey();
+  const key = getHourlyKey();
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -46,7 +44,7 @@ app.get("/", (req, res) => {
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 10 minutes ⚡</p>
+        <p>⚡ This key refreshes every 1 hour ⚡</p>
       </div>
     </body>
     </html>
@@ -54,7 +52,7 @@ app.get("/", (req, res) => {
 });
 
 app.get("/raw", (req, res) => {
-  res.send(getTenMinKey());
+  res.send(getHourlyKey());
 });
 
 app.listen(3000, () => console.log("🚀 KamScripts Key Server running on port 3000"));

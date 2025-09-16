@@ -1,6 +1,21 @@
 const express = require("express");
+const crypto = require("crypto");
 const app = express();
 
+let validTokens = new Set();
+
+// Random token üret
+app.get("/get-token", (req, res) => {
+  const token = crypto.randomBytes(8).toString("hex"); // 16 karakter random
+  validTokens.add(token);
+
+  // Token 30 saniye sonra geçersiz olsun
+  setTimeout(() => validTokens.delete(token), 30000);
+
+  res.send(token);
+});
+
+// 5 dakikalık key
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -10,8 +25,6 @@ function generateKey(seed) {
   }
   return key;
 }
-
-// 5 dakikalık key
 function getFiveMinKey() {
   const date = new Date();
   const fiveMinBlock = Math.floor(date.getUTCMinutes() / 5);
@@ -25,33 +38,15 @@ function getFiveMinKey() {
   return generateKey(seed);
 }
 
-// Index (linkvertise korumalı, tarayıcıya gösterim)
-app.get("/", (req, res) => {
-  const key = getFiveMinKey();
-  res.send(`
-    <html>
-    <head><title>KamScripts Premium Key</title></head>
-    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
-      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
-        <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 5 minutes ⚡</p>
-      </div>
-    </body>
-    </html>
-  `);
-});
-
-// Raw endpoint -> sadece doğru auth parametresiyle
+// Raw endpoint -> sadece geçerli token ile
 app.get("/raw", (req, res) => {
-  const auth = req.query.auth;
-
-  if (auth !== "kamop") {
-    return res.redirect("https://kamscriptsbypass.xo.je"); // yanlışsa yönlendirme
+  const token = req.query.token;
+  if (!validTokens.has(token)) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
   res.set("Content-Type", "text/plain");
   res.send(getFiveMinKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Key Server running on port 3000"));
+app.listen(3000, () => console.log("🚀 KamScripts Secure Key Server running"));

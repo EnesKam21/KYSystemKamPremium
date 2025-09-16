@@ -23,9 +23,9 @@ function getHourlyKey() {
   return generateKey(seed);
 }
 
-// Middleware -> sadece /raw dışında linkvertise koruması uygula
+// Middleware -> sadece / dışında kontrol etme
 app.use((req, res, next) => {
-  if (req.path === "/raw") return next(); // raw özel davranacak
+  if (req.path === "/raw") return next(); // /raw serbest
   const ref = req.get("referer") || "";
   const ua = req.get("user-agent") || "";
 
@@ -38,7 +38,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Index sayfası -> linkvertise korumalı
+// Index (linkvertise korumalı)
 app.get("/", (req, res) => {
   const key = getHourlyKey();
   res.send(`
@@ -55,24 +55,11 @@ app.get("/", (req, res) => {
   `);
 });
 
-// RAW endpoint -> executorlara açık, tarayıcıya redirect
+// Raw endpoint (herkese açık, eski script uyumlu)
 app.get("/raw", (req, res) => {
-  const ua = req.get("user-agent") || "";
-
-  // Whitelist executors
-  const allowed = ["Roblox", "Synapse", "Krnl", "Fluxus", "Script-Ware", "Delta", "Arceus"];
-
-  let ok = false;
-  for (const tag of allowed) {
-    if (ua.includes(tag)) ok = true;
-  }
-
-  if (!ok) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
   res.set("Content-Type", "text/plain");
   res.send(getHourlyKey());
 });
 
+// Server
 app.listen(3000, () => console.log("🚀 KamScripts Key Server running on port 3000"));

@@ -11,7 +11,6 @@ function generateKey(seed) {
   return key;
 }
 
-// 5 dakikalık key
 function getFiveMinKey() {
   const date = new Date();
   const fiveMinBlock = Math.floor(date.getUTCMinutes() / 5);
@@ -25,27 +24,13 @@ function getFiveMinKey() {
   return generateKey(seed);
 }
 
-// Middleware → sadece linkvertise veya executor
-app.use((req, res, next) => {
-  const ref = req.get("referer") || "";
-  const ua = req.get("user-agent") || "";
-
-  // Executor (Roblox/Synapse/Krnl vs.) ise serbest
-  if (ua.includes("Roblox") || ua.includes("Synapse") || ua.includes("Krnl")) {
-    return next();
-  }
-
-  // Tarayıcıdan → sadece linkvertise referrer ile serbest
-  if (ref.includes("linkvertise.com")) {
-    return next();
-  }
-
-  // Diğer her şey → bypass sayfasına at
-  return res.redirect("https://kamscriptsbypass.xo.je");
-});
-
-// Index (tarayıcıya key gösterme)
+// INDEX → sadece linkvertise referrer ile göster
 app.get("/", (req, res) => {
+  const ref = req.get("referer") || "";
+  if (!ref.includes("linkvertise.com")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
   const key = getFiveMinKey();
   res.send(`
     <html>
@@ -61,8 +46,16 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Raw (executor için)
+// RAW → sadece executor
 app.get("/raw", (req, res) => {
+  const ua = req.get("user-agent") || "";
+
+  // Eğer tarayıcı (Mozilla/Chrome) → redirect
+  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  // Executor (Roblox veya boş UA) → key ver
   res.set("Content-Type", "text/plain");
   res.send(getFiveMinKey());
 });

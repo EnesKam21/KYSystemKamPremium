@@ -11,36 +11,21 @@ function generateKey(seed) {
   return key;
 }
 
-
+// 5 dakikalık key
 function getFiveMinKey() {
   const date = new Date();
-  const fiveMinBlock = Math.floor(date.getUTCMinutes() / 5); 
+  const fiveMinBlock = Math.floor(date.getUTCMinutes() / 5);
   const seed = parseInt(
     date.getUTCFullYear().toString() +
     (date.getUTCMonth() + 1).toString().padStart(2, "0") +
-    date.getUTCDate().toString().padStart(2, "0") +
+    date.getUTCDate().toString() +
     date.getUTCHours().toString() +
     fiveMinBlock.toString()
   );
   return generateKey(seed);
 }
 
-
-app.use((req, res, next) => {
-  if (req.path === "/raw") return next(); 
-  const ref = req.get("referer") || "";
-  const ua = req.get("user-agent") || "";
-
-  if (ua.includes("Roblox")) return next();
-
-  if (!ref.includes("linkvertise.com")) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  next();
-});
-
-
+// Index (linkvertise korumalı, tarayıcıya gösterim)
 app.get("/", (req, res) => {
   const key = getFiveMinKey();
   res.send(`
@@ -57,11 +42,16 @@ app.get("/", (req, res) => {
   `);
 });
 
-
+// Raw endpoint -> sadece doğru auth parametresiyle
 app.get("/raw", (req, res) => {
+  const auth = req.query.auth;
+
+  if (auth !== "kamop") {
+    return res.redirect("https://kamscriptsbypass.xo.je"); // yanlışsa yönlendirme
+  }
+
   res.set("Content-Type", "text/plain");
   res.send(getFiveMinKey());
 });
-
 
 app.listen(3000, () => console.log("🚀 KamScripts Key Server running on port 3000"));

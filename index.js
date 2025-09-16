@@ -11,21 +11,23 @@ function generateKey(seed) {
   return key;
 }
 
-// 1 saatlik key
-function getHourlyKey() {
+
+function getFiveMinKey() {
   const date = new Date();
+  const fiveMinBlock = Math.floor(date.getUTCMinutes() / 5); 
   const seed = parseInt(
     date.getUTCFullYear().toString() +
     (date.getUTCMonth() + 1).toString().padStart(2, "0") +
     date.getUTCDate().toString().padStart(2, "0") +
-    date.getUTCHours().toString()
+    date.getUTCHours().toString() +
+    fiveMinBlock.toString()
   );
   return generateKey(seed);
 }
 
-// Middleware -> sadece / dışında kontrol etme
+
 app.use((req, res, next) => {
-  if (req.path === "/raw") return next(); // /raw serbest
+  if (req.path === "/raw") return next(); 
   const ref = req.get("referer") || "";
   const ua = req.get("user-agent") || "";
 
@@ -38,9 +40,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Index (linkvertise korumalı)
+
 app.get("/", (req, res) => {
-  const key = getHourlyKey();
+  const key = getFiveMinKey();
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -48,18 +50,18 @@ app.get("/", (req, res) => {
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 1 hour ⚡</p>
+        <p>⚡ This key refreshes every 5 minutes ⚡</p>
       </div>
     </body>
     </html>
   `);
 });
 
-// Raw endpoint (herkese açık, eski script uyumlu)
+
 app.get("/raw", (req, res) => {
   res.set("Content-Type", "text/plain");
-  res.send(getHourlyKey());
+  res.send(getFiveMinKey());
 });
 
-// Server
+
 app.listen(3000, () => console.log("🚀 KamScripts Key Server running on port 3000"));

@@ -24,7 +24,7 @@ function getFiveMinKey() {
   return generateKey(seed);
 }
 
-// INDEX → sadece linkvertise referrer ile göster
+
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   if (!ref.includes("linkvertise.com")) {
@@ -46,16 +46,16 @@ app.get("/", (req, res) => {
   `);
 });
 
-// RAW → sadece executor
+
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
-  // Eğer tarayıcı (Mozilla/Chrome) → redirect
+  
   if (ua.includes("Mozilla") || ua.includes("Chrome")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Executor (Roblox veya boş UA) → key ver
+  
   res.set("Content-Type", "text/plain");
   res.send(getFiveMinKey());
 });

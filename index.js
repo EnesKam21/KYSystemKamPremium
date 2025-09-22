@@ -11,14 +11,15 @@ function generateKey(seed) {
   return key;
 }
 
-function getTenHourKey() {
+function getTenMinuteKey() {
   const date = new Date();
-  const tenHourBlock = Math.floor(date.getUTCHours() / 10); // 10 saatlik blok
+  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10); // 10 dakikalık blok
   const seed = parseInt(
     date.getUTCFullYear().toString() +
     (date.getUTCMonth() + 1).toString().padStart(2, "0") +
     date.getUTCDate().toString() +
-    tenHourBlock.toString()
+    date.getUTCHours().toString().padStart(2, "0") +
+    tenMinuteBlock.toString()
   );
   return generateKey(seed);
 }
@@ -29,7 +30,7 @@ app.get("/", (req, res) => {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  const key = getTenHourKey();
+  const key = getTenMinuteKey();
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -37,7 +38,7 @@ app.get("/", (req, res) => {
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 10 hours ⚡</p>
+        <p>⚡ This key refreshes every 10 minutes ⚡</p>
       </div>
     </body>
     </html>
@@ -52,7 +53,7 @@ app.get("/raw", (req, res) => {
   }
 
   res.set("Content-Type", "text/plain");
-  res.send(getTenHourKey());
+  res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Linkvertise-Locked Key Server running"));
+app.listen(3000, () => console.log("🚀 KamScripts Linkvertise-Locked Key Server running (10 min refresh)"));

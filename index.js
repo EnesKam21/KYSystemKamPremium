@@ -13,7 +13,7 @@ function generateKey(seed) {
 
 function getTenMinuteKey() {
   const date = new Date();
-  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10); // 10 dakikalık blok
+  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
   const seed = parseInt(
     date.getUTCFullYear().toString() +
     (date.getUTCMonth() + 1).toString().padStart(2, "0") +

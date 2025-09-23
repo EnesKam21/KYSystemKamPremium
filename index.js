@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const whitelist = new Map(); // IP -> expiration
+const shown = new Set(); // IP bazlı kim gördü?
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,29 +26,21 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-function isWhitelisted(ip) {
-  const exp = whitelist.get(ip);
-  if (!exp) return false;
-  if (Date.now() > exp) {
-    whitelist.delete(ip);
-    return false;
-  }
-  return true;
-}
-
 app.get("/", (req, res) => {
   const ip = req.ip;
   const ref = req.get("referer") || "";
 
-  // Check whitelist first
-  if (!isWhitelisted(ip)) {
-    if (!ref.includes("linkvertise.com")) {
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-    // Add to whitelist for 10 minutes
-    whitelist.set(ip, Date.now() + 10 * 60 * 1000);
+  // Eğer daha önce gördüyse => direk bypass
+  if (shown.has(ip)) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
+  // İlk defa => Linkvertise kontrol
+  if (!ref.includes("linkvertise.com")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  shown.add(ip); // artık gördü
   const key = getTenMinuteKey();
   res.send(`
     <html>
@@ -58,6 +50,7 @@ app.get("/", (req, res) => {
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
+        <p style="color:red">(Page will not work again after refresh)</p>
       </div>
     </body>
     </html>
@@ -66,11 +59,12 @@ app.get("/", (req, res) => {
 
 app.get("/raw", (req, res) => {
   const ip = req.ip;
-  if (!isWhitelisted(ip)) {
+  if (shown.has(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
+
   res.set("Content-Type", "text/plain");
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Key Server running with 10-min whitelist"));
+app.listen(3000, () => console.log("🚀 KamScripts One-Time Key Server running (refresh = bypass)"));

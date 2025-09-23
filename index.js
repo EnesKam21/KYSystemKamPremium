@@ -27,19 +27,16 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Cookie validation
 function isCookieValid(req) {
   const now = Date.now();
   const blockStart = parseInt(req.cookies.blockStart || "0");
-
-  // Cookie yoksa veya süresi dolmuşsa geçersiz
   if (!blockStart || now - blockStart > 10 * 60 * 1000) {
     return false;
   }
   return true;
 }
 
-// Main Page
+// ROOT: sadece cookie varsa key göster, yoksa bypass
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const now = Date.now();
@@ -50,13 +47,11 @@ app.get("/", (req, res) => {
   }
 
   if (!isCookieValid(req)) {
-    // Cookie resetle
     res.clearCookie("blockStart");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
   const key = getTenMinuteKey();
-
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -71,7 +66,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-// RAW Key Endpoint
+// RAW: aynı cookie kuralı
 app.get("/raw", (req, res) => {
   if (!isCookieValid(req)) {
     res.clearCookie("blockStart");

@@ -1,8 +1,5 @@
 const express = require("express");
-const cookieParser = require("cookie-parser");
 const app = express();
-
-app.use(cookieParser());
 
 // Key generator
 function generateKey(seed) {
@@ -15,7 +12,7 @@ function generateKey(seed) {
   return key;
 }
 
-// 10 dakikalık blok key
+// 10 dakikalık blok bazlı key
 function getTenMinuteKey() {
   const date = new Date();
   const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
@@ -26,27 +23,37 @@ function getTenMinuteKey() {
     date.getUTCHours().toString().padStart(2, "0") +
     tenMinuteBlock.toString()
   );
-  return generateKey(seed);
+  return { key: generateKey(seed), block: tenMinuteBlock, hour: date.getUTCHours() };
 }
 
-// Ana endpoint
+// Middleware: cookie check
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
-  const now = Date.now();
-
-  // Eğer Linkvertise’den gelmişse → yeni block başlat
-  if (ref.includes("linkvertise.com")) {
-    res.cookie("blockStart", now.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
-  }
-
-  const blockStart = parseInt(req.cookies.blockStart || "0");
-
-  // Block yoksa veya süresi dolmuşsa → bypass
-  if (!blockStart || now - blockStart > 10 * 60 * 1000) {
+  if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  const key = getTenMinuteKey();
+  const { key, block, hour } = getTenMinuteKey();
+
+  // Cookie ile kontrol et
+  const lastHour = req.cookies?.lastHour;
+  const lastBlock = req.cookies?.lastBlock;
+
+  if (lastHour && lastBlock) {
+    // Eğer yeni blok başladıysa -> bypass
+    if (parseInt(lastHour) !== hour || parseInt(lastBlock) !== block) {
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+  }
+
+  // Cookie set et
+  res.cookie("lastHour", hour.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
+  res.cookie("lastBlock", block.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
 
   // Key sayfası
   res.send(`
@@ -63,16 +70,16 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Raw endpoint (sadece executor)
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
+  // Tarayıcı engelle
   if (ua.includes("Mozilla") || ua.includes("Chrome")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
   res.set("Content-Type", "text/plain");
-  res.send(getTenMinuteKey());
+  res.send(getTenMinuteKey().key);
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Key Server running (10 min block system)"));
+app.listen(3000, () => console.log("🚀 KamScripts Linkvertise-Locked Key Server running (10 min refresh + cookie check)"));

@@ -42,7 +42,6 @@ app.get("/", (req, res) => {
 
   if (!isValid(ip)) {
     if (ref.includes("linkvertise.com")) {
-      // Key ilk defa alındığında 10 dk süre başlat
       activeSessions[ip] = {
         expiresAt: Date.now() + 10 * 60 * 1000
       };
@@ -51,7 +50,12 @@ app.get("/", (req, res) => {
     }
   }
 
+  const session = activeSessions[ip];
+  if (!session) return res.redirect("https://kamscriptsbypass.xo.je");
+
+  const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
   const key = getTenMinuteKey();
+
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -60,7 +64,21 @@ app.get("/", (req, res) => {
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
+        <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
       </div>
+      <script>
+        let remaining = ${timeLeft};
+        function updateTimer() {
+          if (remaining <= 0) {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+            return;
+          }
+          document.getElementById("timer").innerText = "⏳ Time left: " + remaining + "s";
+          remaining--;
+        }
+        setInterval(updateTimer, 1000);
+        updateTimer();
+      </script>
     </body>
     </html>
   `);
@@ -82,4 +100,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Final Key Server running with strict 10-min sessions"));
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min countdown"));

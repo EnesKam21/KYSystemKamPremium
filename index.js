@@ -26,22 +26,22 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Browser (root)
+// Browser için kökten kilit
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.ip;
 
-  // Daha önce gördüyse -> bypass
-  if (usedSessions.has(ip)) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // Linkvertise’den gelmemişse -> bypass
+  // Eğer referer linkvertise değilse -> direk bypass
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // İlk defa -> key ver, IP’yi lockla
+  // Daha önce key görmüşse -> bypass
+  if (usedSessions.has(ip)) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  // İlk defa -> key ver
   usedSessions.add(ip);
   const key = getTenMinuteKey();
 
@@ -52,18 +52,18 @@ app.get("/", (req, res) => {
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key can only be viewed once in browser ⚡</p>
+        <p>⚡ This key can only be viewed once ⚡</p>
       </div>
     </body>
     </html>
   `);
 });
 
-// Executor (raw)
+// Executor raw endpoint
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
-  // Browserdan girerse -> bypass
+  // Eğer tarayıcıdan girdiyse -> bypass
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
@@ -73,5 +73,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-// ✅ Vercel export
 module.exports = app;

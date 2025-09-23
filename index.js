@@ -27,19 +27,31 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
+// Cookie validation
+function isCookieValid(req) {
+  const now = Date.now();
+  const blockStart = parseInt(req.cookies.blockStart || "0");
+
+  // Cookie yoksa veya süresi dolmuşsa geçersiz
+  if (!blockStart || now - blockStart > 10 * 60 * 1000) {
+    return false;
+  }
+  return true;
+}
+
+// Main Page
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const now = Date.now();
 
-  // Linkvertise'den geldiyse cookie setle
+  // Linkvertise’den gelmişse cookie setle
   if (ref.includes("linkvertise.com")) {
     res.cookie("blockStart", now.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
   }
 
-  const blockStart = parseInt(req.cookies.blockStart || "0");
-
-  // Cookie yoksa veya süresi dolmuşsa bypass'a at
-  if (!blockStart || now - blockStart > 10 * 60 * 1000) {
+  if (!isCookieValid(req)) {
+    // Cookie resetle
+    res.clearCookie("blockStart");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
@@ -59,12 +71,10 @@ app.get("/", (req, res) => {
   `);
 });
 
+// RAW Key Endpoint
 app.get("/raw", (req, res) => {
-  const now = Date.now();
-  const blockStart = parseInt(req.cookies.blockStart || "0");
-
-  // Cookie check: aynı kural burada da geçerli
-  if (!blockStart || now - blockStart > 10 * 60 * 1000) {
+  if (!isCookieValid(req)) {
+    res.clearCookie("blockStart");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 

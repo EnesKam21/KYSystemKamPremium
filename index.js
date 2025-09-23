@@ -1,6 +1,8 @@
 const express = require("express");
 const app = express();
 
+const whitelist = new Map(); // IP -> expiration
+
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -24,10 +26,27 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
+function isWhitelisted(ip) {
+  const exp = whitelist.get(ip);
+  if (!exp) return false;
+  if (Date.now() > exp) {
+    whitelist.delete(ip);
+    return false;
+  }
+  return true;
+}
+
 app.get("/", (req, res) => {
+  const ip = req.ip;
   const ref = req.get("referer") || "";
-  if (!ref.includes("linkvertise.com")) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
+
+  // Check whitelist first
+  if (!isWhitelisted(ip)) {
+    if (!ref.includes("linkvertise.com")) {
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    // Add to whitelist for 10 minutes
+    whitelist.set(ip, Date.now() + 10 * 60 * 1000);
   }
 
   const key = getTenMinuteKey();
@@ -46,14 +65,12 @@ app.get("/", (req, res) => {
 });
 
 app.get("/raw", (req, res) => {
-  const ua = req.get("user-agent") || "";
-  
-  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
+  const ip = req.ip;
+  if (!isWhitelisted(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
-
   res.set("Content-Type", "text/plain");
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Linkvertise-Locked Key Server running (10 min refresh)"));
+app.listen(3000, () => console.log("🚀 KamScripts Key Server running with 10-min whitelist"));

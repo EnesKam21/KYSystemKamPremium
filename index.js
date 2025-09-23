@@ -31,19 +31,18 @@ app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const now = Date.now();
 
-  // Eğer linkvertise’den gelmişse veya daha önce cookie’si varsa
+  // Linkvertise'den geldiyse cookie setle
   if (ref.includes("linkvertise.com")) {
     res.cookie("blockStart", now.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
   }
 
   const blockStart = parseInt(req.cookies.blockStart || "0");
 
-  // Eğer cookie yok veya süresi dolmuşsa tekrar linkvertise’ye gönder
+  // Cookie yoksa veya süresi dolmuşsa bypass'a at
   if (!blockStart || now - blockStart > 10 * 60 * 1000) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Buraya geldiyse cookie geçerli → key ver
   const key = getTenMinuteKey();
 
   res.send(`
@@ -61,9 +60,11 @@ app.get("/", (req, res) => {
 });
 
 app.get("/raw", (req, res) => {
-  const ua = req.get("user-agent") || "";
+  const now = Date.now();
+  const blockStart = parseInt(req.cookies.blockStart || "0");
 
-  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
+  // Cookie check: aynı kural burada da geçerli
+  if (!blockStart || now - blockStart > 10 * 60 * 1000) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 

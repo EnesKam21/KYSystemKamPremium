@@ -1,8 +1,6 @@
 const express = require("express");
 const app = express();
 
-const sessions = new Map(); // IP -> { expire, block }
-
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -29,45 +27,42 @@ function getTenMinuteKey() {
   return generateKey(parseInt(getBlockID()));
 }
 
+// Ana sayfa → HTML (oyuncular görecek)
 app.get("/", (req, res) => {
-  const ip = req.ip;
   const ref = req.get("referer") || "";
-  const nowBlock = getBlockID();
 
-  const session = sessions.get(ip);
-
-  // Eğer session varsa
-  if (session) {
-    // Eğer block aynıysa → key göster
-    if (session.block === nowBlock) {
-      return res.send(`<h1 style="color:lime">KEY: ${getTenMinuteKey()}<br>(Block ${nowBlock})</h1>`);
-    }
-    // Block değişmiş → artık tekrar Linkvertise zorunlu
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // İlk defa → Linkvertise kontrol
+  // Linkvertise’den gelmediyse → bypass
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Yeni session: geçerli blockID kaydet
-  sessions.set(ip, { block: nowBlock });
-
-  return res.send(`<h1 style="color:cyan">KEY: ${getTenMinuteKey()}<br>(New session, Block ${nowBlock})</h1>`);
+  const key = getTenMinuteKey();
+  res.send(`
+    <html>
+    <head><title>KamScripts Premium Key</title></head>
+    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
+      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
+        <h1>KamScripts Premium Key</h1>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+        <p>⚡ This key refreshes every 10 minutes ⚡</p>
+      </div>
+    </body>
+    </html>
+  `);
 });
 
+// Raw endpoint → sadece executor
 app.get("/raw", (req, res) => {
-  const ip = req.ip;
-  const nowBlock = getBlockID();
-  const session = sessions.get(ip);
+  const ua = req.get("user-agent") || "";
 
-  if (!session || session.block !== nowBlock) {
+  // Eğer tarayıcıdan açarsa → bypass
+  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
+  // Executor → direkt key
   res.set("Content-Type", "text/plain");
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Key Server running (block-based refresh)"));
+app.listen(3000, () => console.log("🚀 KamScripts Linkvertise-Locked Key Server running (10 min refresh)"));

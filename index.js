@@ -47,11 +47,11 @@ app.get("/", sessionCheck, (req, res) => {
   const now = Date.now();
 
   if (!req.sessionValid) {
-    // sadece linkversiteden geldiyse yeni 10 dk aç
+    // sadece linkvertise'den geldiyse yeni 10 dk aç
     if (ref.includes("linkvertise.com")) {
       const newKey = getTenMinuteKey();
       activeSessions.set(ip, {
-        expiresAt: now + 10 * 60 * 1000,
+        expiresAt: now + 10 * 60 * 1000, // 10 dakika
         lastKey: newKey
       });
       req.sessionValid = true;
@@ -78,8 +78,13 @@ app.get("/", sessionCheck, (req, res) => {
 app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.ip;
-  const now = Date.now();
 
+  // Tarayıcıdan girerse bypass
+  if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  // Session yoksa yine bypass
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }

@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const shown = new Set(); // IP bazlı kim gördü?
+const used = new Set(); // IP -> seen once
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -30,17 +30,18 @@ app.get("/", (req, res) => {
   const ip = req.ip;
   const ref = req.get("referer") || "";
 
-  // Eğer daha önce gördüyse => direk bypass
-  if (shown.has(ip)) {
+  // Eğer daha önce kullandıysa → bypass
+  if (used.has(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // İlk defa => Linkvertise kontrol
+  // Linkvertise kontrol
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  shown.add(ip); // artık gördü
+  // İlk defa, Linkvertise ile → key ver + ip'yi işaretle
+  used.add(ip);
   const key = getTenMinuteKey();
   res.send(`
     <html>
@@ -50,7 +51,7 @@ app.get("/", (req, res) => {
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
-        <p style="color:red">(Page will not work again after refresh)</p>
+        <p style="color:red">(You cannot refresh this page to get a new key)</p>
       </div>
     </body>
     </html>
@@ -59,7 +60,7 @@ app.get("/", (req, res) => {
 
 app.get("/raw", (req, res) => {
   const ip = req.ip;
-  if (shown.has(ip)) {
+  if (used.has(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
@@ -67,4 +68,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts One-Time Key Server running (refresh = bypass)"));
+app.listen(3000, () => console.log("🚀 KamScripts Key Server running (refresh = bypass)"));

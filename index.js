@@ -1,14 +1,7 @@
 const express = require("express");
-const session = require("express-session");
 const app = express();
 
-// Session middleware
-app.use(session({
-  secret: "kam-super-secret-key",
-  resave: false,
-  saveUninitialized: true,
-  cookie: { maxAge: 10 * 60 * 1000 } // 10 dk
-}));
+const activeSessions = {}; // { ip: { startTime, expiresAt } }
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -33,28 +26,31 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Ana sayfa
+function isValid(ip) {
+  const session = activeSessions[ip];
+  if (!session) return false;
+  if (Date.now() > session.expiresAt) {
+    delete activeSessions[ip];
+    return false;
+  }
+  return true;
+}
+
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  // Eğer session geçerli değilse ve referer linkvertise değilse → bypass
-  if (!req.session.valid && !ref.includes("linkvertise.com")) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
+  if (!isValid(ip)) {
+    if (ref.includes("linkvertise.com")) {
+      activeSessions[ip] = {
+        startTime: Date.now(),
+        expiresAt: Date.now() + 10 * 60 * 1000
+      };
+    } else {
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
   }
 
-  // Eğer session yoksa yeni session aç
-  if (!req.session.valid && ref.includes("linkvertise.com")) {
-    req.session.valid = true;
-    req.session.startTime = Date.now();
-  }
-
-  // Eğer session 10 dk geçtiyse → bypass
-  if (req.session.startTime && Date.now() - req.session.startTime > 10 * 60 * 1000) {
-    req.session.destroy(() => {});
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // Key üret
   const key = getTenMinuteKey();
   res.send(`
     <html>
@@ -70,23 +66,15 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Raw endpoint
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  // Tarayıcıyla giriyorsa bypass
   if (ua.includes("Mozilla") || ua.includes("Chrome")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Eğer session geçerli değilse → bypass
-  if (!req.session.valid) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // Session süresi dolmuşsa → bypass
-  if (req.session.startTime && Date.now() - req.session.startTime > 10 * 60 * 1000) {
-    req.session.destroy(() => {});
+  if (!isValid(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
@@ -94,4 +82,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min session limit"));
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with IP-based 10-min system"));

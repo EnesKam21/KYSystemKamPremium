@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = new Map(); 
+const activeSessions = new Map();
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,7 +26,6 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-
 function sessionCheck(req, res, next) {
   const ip = req.ip;
   const session = activeSessions.get(ip);
@@ -41,28 +40,28 @@ function sessionCheck(req, res, next) {
   next();
 }
 
-
 app.get("/", sessionCheck, (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.ip;
   const now = Date.now();
 
-  if (!req.sessionValid) {
-    
-    if (!ref.includes("linkvertise.com")) {
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
+  // Eğer session yoksa ve referer linkvertise değilse -> bypass
+  if (!req.sessionValid && !ref.includes("linkvertise.com")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
 
-    
+  // Eğer linkvertise'den geldiyse yeni session aç
+  if (!req.sessionValid && ref.includes("linkvertise.com")) {
     const newKey = getTenMinuteKey();
     activeSessions.set(ip, {
-      expiresAt: now + 10 * 60 * 1000, 
+      expiresAt: now + 10 * 60 * 1000,
       lastKey: newKey
     });
     req.sessionValid = true;
     req.sessionKey = newKey;
   }
 
+  // Eğer session hala yoksa (götünü kurtarmak için double check)
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
@@ -81,17 +80,16 @@ app.get("/", sessionCheck, (req, res) => {
   `);
 });
 
-
 app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.ip;
 
-  
+  // Browserlardan geleni direkt bypassla
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  
+  // Session yoksa bypass
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }

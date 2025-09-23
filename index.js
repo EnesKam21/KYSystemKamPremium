@@ -4,7 +4,7 @@ const app = express();
 
 app.use(cookieParser());
 
-// Key generator
+
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -15,7 +15,7 @@ function generateKey(seed) {
   return key;
 }
 
-// 10 dakikalık blok key
+
 function getTenMinuteKey() {
   const date = new Date();
   const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
@@ -29,26 +29,26 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Ana endpoint
+
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const now = Date.now();
 
-  // Eğer Linkvertise’den gelmişse → yeni block başlat
+  
   if (ref.includes("linkvertise.com")) {
     res.cookie("blockStart", now.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
   }
 
   const blockStart = parseInt(req.cookies.blockStart || "0");
 
-  // Block yoksa veya süresi dolmuşsa → bypass
+  
   if (!blockStart || now - blockStart > 10 * 60 * 1000) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
   const key = getTenMinuteKey();
 
-  // Key sayfası
+  
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -63,7 +63,7 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Raw endpoint (sadece executor için)
+
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
@@ -75,5 +75,5 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-// Vercel için export
+
 module.exports = app;

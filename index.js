@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = new Map(); // IP -> { expiresAt }
+const activeSessions = new Map(); // IP -> expiresAt
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -13,6 +13,7 @@ function generateKey(seed) {
   return key;
 }
 
+// 🔑 Block bazlı key (her 10 dakikada bir değişir, tüm kullanıcılar aynı keyi görür)
 function getTenMinuteKey() {
   const date = new Date();
   const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
@@ -47,12 +48,11 @@ app.get("/", sessionCheck, (req, res) => {
   const now = Date.now();
 
   if (!req.sessionValid) {
-    // sadece linkvertise’den gelen yeni session açabilir
     if (!ref.includes("linkvertise.com")) {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
 
-    // bireysel 10 dk session
+    // 10 dk session açılıyor
     activeSessions.set(ip, {
       expiresAt: now + 10 * 60 * 1000
     });
@@ -95,7 +95,7 @@ app.get("/raw", sessionCheck, (req, res) => {
   }
 
   res.set("Content-Type", "text/plain");
-  res.send(getTenMinuteKey());
+  res.send(getTenMinuteKey()); // herkes için aynı block key
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Final Key System Running (per-user 10 min sessions)"));
+app.listen(3000, () => console.log("🚀 KamScripts Block-Based Key System Running"));

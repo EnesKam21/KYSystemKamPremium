@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const sessions = new Map(); // ip -> { lastUsed, lastKey }
+const activeSessions = new Map(); // IP -> { expiresAt }
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,23 +26,44 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Browser endpoint
-app.get("/", (req, res) => {
-  const ref = req.get("referer") || "";
-  const ip = req.headers["x-forwarded-for"] || req.ip;
+// Middleware
+function sessionCheck(req, res, next) {
+  const ip = req.ip;
+  const session = activeSessions.get(ip);
   const now = Date.now();
 
-  // Eğer referer linkvertise değilse -> bypass
-  if (!ref.includes("linkvertise.com")) {
+  if (session && session.expiresAt > now) {
+    req.sessionValid = true;
+  } else {
+    req.sessionValid = false;
+  }
+  next();
+}
+
+// "/" endpoint
+app.get("/", sessionCheck, (req, res) => {
+  const ref = req.get("referer") || "";
+  const ip = req.ip;
+  const now = Date.now();
+
+  if (!req.sessionValid) {
+    // sadece linkvertise’den gelen yeni session açabilir
+    if (!ref.includes("linkvertise.com")) {
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+
+    // bireysel 10 dk session
+    activeSessions.set(ip, {
+      expiresAt: now + 10 * 60 * 1000
+    });
+    req.sessionValid = true;
+  }
+
+  if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Yeni key üret
-  const newKey = getTenMinuteKey();
-  sessions.set(ip, {
-    lastUsed: now,       // en son alım zamanı
-    lastKey: newKey      // o zamanın key'i
-  });
+  const key = getTenMinuteKey();
 
   res.send(`
     <html>
@@ -50,26 +71,31 @@ app.get("/", (req, res) => {
     <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${newKey}</div>
-        <p>⚡ Each new key requires Linkvertise again ⚡</p>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+        <p>⚡ This key refreshes every 10 minutes ⚡</p>
       </div>
     </body>
     </html>
   `);
 });
 
-// Executor endpoint
-app.get("/raw", (req, res) => {
+// "/raw" endpoint
+app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
+  const ip = req.ip;
 
-  // Tarayıcıdan gelirse -> bypass
+  // Tarayıcıdan girerse bypass
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Executor her zaman key alır
+  // Session yoksa bypass
+  if (!req.sessionValid) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
   res.set("Content-Type", "text/plain");
   res.send(getTenMinuteKey());
 });
 
-module.exports = app;
+app.listen(3000, () => console.log("🚀 KamScripts Final Key System Running (per-user 10 min sessions)"));

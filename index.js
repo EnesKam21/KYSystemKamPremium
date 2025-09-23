@@ -26,7 +26,7 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Middleware to track sessions
+// Middleware: session kontrol
 function sessionCheck(req, res, next) {
   const ip = req.ip;
   const session = activeSessions.get(ip);
@@ -41,24 +41,30 @@ function sessionCheck(req, res, next) {
   next();
 }
 
+// Ana sayfa -> sadece linkvertise girişine izin
 app.get("/", sessionCheck, (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.ip;
   const now = Date.now();
 
   if (!req.sessionValid) {
-    // sadece linkvertise'den geldiyse yeni 10 dk aç
-    if (ref.includes("linkvertise.com")) {
-      const newKey = getTenMinuteKey();
-      activeSessions.set(ip, {
-        expiresAt: now + 10 * 60 * 1000, // 10 dakika
-        lastKey: newKey
-      });
-      req.sessionValid = true;
-      req.sessionKey = newKey;
-    } else {
+    // ❌ Referer yoksa veya linkvertise değilse => bypass
+    if (!ref.includes("linkvertise.com")) {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
+
+    // ✅ İlk defa linkvertise'den gelmişse session aç
+    const newKey = getTenMinuteKey();
+    activeSessions.set(ip, {
+      expiresAt: now + 10 * 60 * 1000, // 10 dk
+      lastKey: newKey
+    });
+    req.sessionValid = true;
+    req.sessionKey = newKey;
+  }
+
+  if (!req.sessionValid) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
   res.send(`
@@ -75,6 +81,7 @@ app.get("/", sessionCheck, (req, res) => {
   `);
 });
 
+// /raw -> sadece executor çekebilir
 app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.ip;
@@ -93,4 +100,4 @@ app.get("/raw", sessionCheck, (req, res) => {
   res.send(activeSessions.get(ip).lastKey);
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Fixed Key System Running (10 min per user session)"));
+app.listen(3000, () => console.log("🚀 KamScripts Final Key System Running (10 min per user session)"));

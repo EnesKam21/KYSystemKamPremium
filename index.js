@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = new Map(); // IP -> { expiresAt, lastKey }
+const activeSessions = new Map(); 
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,7 +26,7 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Middleware: session kontrol
+
 function sessionCheck(req, res, next) {
   const ip = req.ip;
   const session = activeSessions.get(ip);
@@ -41,22 +41,22 @@ function sessionCheck(req, res, next) {
   next();
 }
 
-// Ana sayfa -> sadece linkvertise girişine izin
+
 app.get("/", sessionCheck, (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.ip;
   const now = Date.now();
 
   if (!req.sessionValid) {
-    // ❌ Referer yoksa veya linkvertise değilse => bypass
+    
     if (!ref.includes("linkvertise.com")) {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
 
-    // ✅ İlk defa linkvertise'den gelmişse session aç
+    
     const newKey = getTenMinuteKey();
     activeSessions.set(ip, {
-      expiresAt: now + 10 * 60 * 1000, // 10 dk
+      expiresAt: now + 10 * 60 * 1000, 
       lastKey: newKey
     });
     req.sessionValid = true;
@@ -81,17 +81,17 @@ app.get("/", sessionCheck, (req, res) => {
   `);
 });
 
-// /raw -> sadece executor çekebilir
+
 app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.ip;
 
-  // Tarayıcıdan girerse bypass
+  
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Session yoksa yine bypass
+  
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }

@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const usedSessions = new Set(); // sadece browser için
+const sessions = new Map(); // ip -> { lastUsed, lastKey }
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,24 +26,23 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Browser için kökten kilit
+// Browser endpoint
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.ip;
+  const now = Date.now();
 
-  // Eğer referer linkvertise değilse -> direk bypass
+  // Eğer referer linkvertise değilse -> bypass
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Daha önce key görmüşse -> bypass
-  if (usedSessions.has(ip)) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // İlk defa -> key ver
-  usedSessions.add(ip);
-  const key = getTenMinuteKey();
+  // Yeni key üret
+  const newKey = getTenMinuteKey();
+  sessions.set(ip, {
+    lastUsed: now,       // en son alım zamanı
+    lastKey: newKey      // o zamanın key'i
+  });
 
   res.send(`
     <html>
@@ -51,19 +50,19 @@ app.get("/", (req, res) => {
     <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key can only be viewed once ⚡</p>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold">${newKey}</div>
+        <p>⚡ Each new key requires Linkvertise again ⚡</p>
       </div>
     </body>
     </html>
   `);
 });
 
-// Executor raw endpoint
+// Executor endpoint
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
-  // Eğer tarayıcıdan girdiyse -> bypass
+  // Tarayıcıdan gelirse -> bypass
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }

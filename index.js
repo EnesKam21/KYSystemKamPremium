@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = {}; // { ip: { startTime, expiresAt } }
+const activeSessions = {}; // { ip: { expiresAt } }
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -42,8 +42,8 @@ app.get("/", (req, res) => {
 
   if (!isValid(ip)) {
     if (ref.includes("linkvertise.com")) {
+      // Key ilk defa alındığında 10 dk süre başlat
       activeSessions[ip] = {
-        startTime: Date.now(),
         expiresAt: Date.now() + 10 * 60 * 1000
       };
     } else {
@@ -82,4 +82,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with IP-based 10-min system"));
+app.listen(3000, () => console.log("🚀 KamScripts Final Key Server running with strict 10-min sessions"));

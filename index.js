@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const used = new Set(); // IP -> seen once
+const sessions = new Map(); // IP -> expireTime (timestamp)
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,22 +26,46 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
+function isActive(ip) {
+  const exp = sessions.get(ip);
+  if (!exp) return false;
+  if (Date.now() > exp) {
+    sessions.delete(ip);
+    return false;
+  }
+  return true;
+}
+
 app.get("/", (req, res) => {
   const ip = req.ip;
   const ref = req.get("referer") || "";
 
-  // Eğer daha önce kullandıysa → bypass
-  if (used.has(ip)) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
+  // Eğer aktif session varsa → direkt key ver
+  if (isActive(ip)) {
+    const key = getTenMinuteKey();
+    return res.send(`
+      <html>
+      <head><title>KamScripts Premium Key</title></head>
+      <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
+        <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
+          <h1>KamScripts Premium Key</h1>
+          <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+          <p>⚡ This key refreshes every 10 minutes ⚡</p>
+          <p style="color:lime">Session valid until ${new Date(sessions.get(ip)).toLocaleTimeString()} UTC</p>
+        </div>
+      </body>
+      </html>
+    `);
   }
 
-  // Linkvertise kontrol
+  // İlk defa → Linkvertise kontrol
   if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // İlk defa, Linkvertise ile → key ver + ip'yi işaretle
-  used.add(ip);
+  // Yeni session: 10 dakika aktif
+  sessions.set(ip, Date.now() + 10 * 60 * 1000);
+
   const key = getTenMinuteKey();
   res.send(`
     <html>
@@ -51,7 +75,7 @@ app.get("/", (req, res) => {
         <h1>KamScripts Premium Key</h1>
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
-        <p style="color:red">(You cannot refresh this page to get a new key)</p>
+        <p style="color:lime">Session valid until ${new Date(sessions.get(ip)).toLocaleTimeString()} UTC</p>
       </div>
     </body>
     </html>
@@ -60,7 +84,8 @@ app.get("/", (req, res) => {
 
 app.get("/raw", (req, res) => {
   const ip = req.ip;
-  if (used.has(ip)) {
+
+  if (!isActive(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
@@ -68,4 +93,4 @@ app.get("/raw", (req, res) => {
   res.send(getTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Key Server running (refresh = bypass)"));
+app.listen(3000, () => console.log("🚀 KamScripts Key Server running (10-min sessions)"));

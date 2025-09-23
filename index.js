@@ -4,7 +4,6 @@ const app = express();
 
 app.use(cookieParser());
 
-
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
@@ -14,7 +13,6 @@ function generateKey(seed) {
   }
   return key;
 }
-
 
 function getTenMinuteKey() {
   const date = new Date();
@@ -29,26 +27,25 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const now = Date.now();
 
-  
+  // Eğer linkvertise’den gelmişse veya daha önce cookie’si varsa
   if (ref.includes("linkvertise.com")) {
     res.cookie("blockStart", now.toString(), { maxAge: 10 * 60 * 1000, httpOnly: true });
   }
 
   const blockStart = parseInt(req.cookies.blockStart || "0");
 
-  
+  // Eğer cookie yok veya süresi dolmuşsa tekrar linkvertise’ye gönder
   if (!blockStart || now - blockStart > 10 * 60 * 1000) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
+  // Buraya geldiyse cookie geçerli → key ver
   const key = getTenMinuteKey();
 
-  
   res.send(`
     <html>
     <head><title>KamScripts Premium Key</title></head>
@@ -63,7 +60,6 @@ app.get("/", (req, res) => {
   `);
 });
 
-
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
 
@@ -74,6 +70,5 @@ app.get("/raw", (req, res) => {
   res.set("Content-Type", "text/plain");
   res.send(getTenMinuteKey());
 });
-
 
 module.exports = app;

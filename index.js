@@ -27,7 +27,7 @@ function getTenMinuteKey() {
 }
 
 function sessionCheck(req, res, next) {
-  const ip = req.ip;
+  const ip = req.headers["x-forwarded-for"] || req.ip; // Vercel gerçek IP
   const session = activeSessions.get(ip);
   const now = Date.now();
 
@@ -42,26 +42,23 @@ function sessionCheck(req, res, next) {
 
 app.get("/", sessionCheck, (req, res) => {
   const ref = req.get("referer") || "";
-  const ip = req.ip;
+  const ip = req.headers["x-forwarded-for"] || req.ip;
   const now = Date.now();
 
-  // Eğer session yoksa ve referer linkvertise değilse -> bypass
   if (!req.sessionValid && !ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Eğer linkvertise'den geldiyse yeni session aç
   if (!req.sessionValid && ref.includes("linkvertise.com")) {
     const newKey = getTenMinuteKey();
     activeSessions.set(ip, {
       expiresAt: now + 10 * 60 * 1000,
-      lastKey: newKey
+      lastKey: newKey,
     });
     req.sessionValid = true;
     req.sessionKey = newKey;
   }
 
-  // Eğer session hala yoksa (götünü kurtarmak için double check)
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
@@ -82,14 +79,12 @@ app.get("/", sessionCheck, (req, res) => {
 
 app.get("/raw", sessionCheck, (req, res) => {
   const ua = req.get("user-agent") || "";
-  const ip = req.ip;
+  const ip = req.headers["x-forwarded-for"] || req.ip;
 
-  // Browserlardan geleni direkt bypassla
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Session yoksa bypass
   if (!req.sessionValid) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
@@ -98,4 +93,5 @@ app.get("/raw", sessionCheck, (req, res) => {
   res.send(activeSessions.get(ip).lastKey);
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Final Key System Running (10 min per user session)"));
+// ✅ Vercel için sadece export et
+module.exports = app;

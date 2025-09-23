@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = new Map(); // IP -> expiresAt
+const sessions = {}; // IP -> { expiresAt, key }
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -13,7 +13,6 @@ function generateKey(seed) {
   return key;
 }
 
-// 🔑 Block bazlı key (her 10 dakikada bir değişir, tüm kullanıcılar aynı keyi görür)
 function getTenMinuteKey() {
   const date = new Date();
   const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
@@ -27,45 +26,49 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Middleware
-function sessionCheck(req, res, next) {
+app.get("/", (req, res) => {
   const ip = req.ip;
-  const session = activeSessions.get(ip);
-  const now = Date.now();
-
-  if (session && session.expiresAt > now) {
-    req.sessionValid = true;
-  } else {
-    req.sessionValid = false;
-  }
-  next();
-}
-
-// "/" endpoint
-app.get("/", sessionCheck, (req, res) => {
   const ref = req.get("referer") || "";
-  const ip = req.ip;
-  const now = Date.now();
 
-  if (!req.sessionValid) {
-    if (!ref.includes("linkvertise.com")) {
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-
-    // 10 dk session açılıyor
-    activeSessions.set(ip, {
-      expiresAt: now + 10 * 60 * 1000
-    });
-    req.sessionValid = true;
+  // Eğer session varsa ve süresi geçmediyse, aynı keyi göster
+  if (sessions[ip] && sessions[ip].expiresAt > Date.now()) {
+    return res.send(renderPage(sessions[ip].key));
   }
 
-  if (!req.sessionValid) {
+  // Eğer referer doğru değilse -> bypass
+  if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
+  // Yeni session başlat
   const key = getTenMinuteKey();
+  sessions[ip] = {
+    key,
+    expiresAt: Date.now() + 10 * 60 * 1000 // 10 dakika
+  };
 
-  res.send(`
+  res.send(renderPage(key));
+});
+
+app.get("/raw", (req, res) => {
+  const ip = req.ip;
+  const ua = req.get("user-agent") || "";
+
+  // Sadece executorlar alabilsin
+  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  if (!sessions[ip] || sessions[ip].expiresAt < Date.now()) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
+  res.set("Content-Type", "text/plain");
+  res.send(sessions[ip].key);
+});
+
+function renderPage(key) {
+  return `
     <html>
     <head><title>KamScripts Premium Key</title></head>
     <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
@@ -76,26 +79,9 @@ app.get("/", sessionCheck, (req, res) => {
       </div>
     </body>
     </html>
-  `);
-});
+  `;
+}
 
-// "/raw" endpoint
-app.get("/raw", sessionCheck, (req, res) => {
-  const ua = req.get("user-agent") || "";
-  const ip = req.ip;
-
-  // Tarayıcıdan girerse bypass
-  if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  // Session yoksa bypass
-  if (!req.sessionValid) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
-  res.set("Content-Type", "text/plain");
-  res.send(getTenMinuteKey()); // herkes için aynı block key
-});
-
-app.listen(3000, () => console.log("🚀 KamScripts Block-Based Key System Running"));
+app.listen(3000, () =>
+  console.log("🚀 KamScripts Key Server with session timestamp running")
+);

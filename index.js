@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 
-const activeSessions = new Map();
+const usedSessions = new Set(); // sadece browser için
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -26,42 +26,24 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-function sessionCheck(req, res, next) {
-  const ip = req.headers["x-forwarded-for"] || req.ip; // Vercel gerçek IP
-  const session = activeSessions.get(ip);
-  const now = Date.now();
-
-  if (session && session.expiresAt > now) {
-    req.sessionValid = true;
-    req.sessionKey = session.lastKey;
-  } else {
-    req.sessionValid = false;
-  }
-  next();
-}
-
-app.get("/", sessionCheck, (req, res) => {
+// Browser (root)
+app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.ip;
-  const now = Date.now();
 
-  if (!req.sessionValid && !ref.includes("linkvertise.com")) {
+  // Daha önce gördüyse -> bypass
+  if (usedSessions.has(ip)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  if (!req.sessionValid && ref.includes("linkvertise.com")) {
-    const newKey = getTenMinuteKey();
-    activeSessions.set(ip, {
-      expiresAt: now + 10 * 60 * 1000,
-      lastKey: newKey,
-    });
-    req.sessionValid = true;
-    req.sessionKey = newKey;
-  }
-
-  if (!req.sessionValid) {
+  // Linkvertise’den gelmemişse -> bypass
+  if (!ref.includes("linkvertise.com")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
+
+  // İlk defa -> key ver, IP’yi lockla
+  usedSessions.add(ip);
+  const key = getTenMinuteKey();
 
   res.send(`
     <html>
@@ -69,29 +51,27 @@ app.get("/", sessionCheck, (req, res) => {
     <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${req.sessionKey}</div>
-        <p>⚡ This key refreshes every 10 minutes ⚡</p>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+        <p>⚡ This key can only be viewed once in browser ⚡</p>
       </div>
     </body>
     </html>
   `);
 });
 
-app.get("/raw", sessionCheck, (req, res) => {
+// Executor (raw)
+app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
-  const ip = req.headers["x-forwarded-for"] || req.ip;
 
+  // Browserdan girerse -> bypass
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  if (!req.sessionValid) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-
+  // Executor her zaman key alır
   res.set("Content-Type", "text/plain");
-  res.send(activeSessions.get(ip).lastKey);
+  res.send(getTenMinuteKey());
 });
 
-// ✅ Vercel için sadece export et
+// ✅ Vercel export
 module.exports = app;

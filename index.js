@@ -1,4 +1,5 @@
 const express = require("express");
+
 const app = express();
 
 const activeSessions = {}; // { ip: { expiresAt } }
@@ -58,7 +59,10 @@ app.get("/", (req, res) => {
 
   res.send(`
     <html>
-    <head><title>KamScripts Premium Key</title></head>
+    <head>
+      <title>KamScripts Premium Key</title>
+      <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
+    </head>
     <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
         <h1>KamScripts Premium Key</h1>
@@ -68,16 +72,30 @@ app.get("/", (req, res) => {
       </div>
       <script>
         let remaining = ${timeLeft};
+        let startTime = Date.now();
+        let serverTimeLeft = ${timeLeft};
+        
         function updateTimer() {
-          if (remaining <= 0) {
+          // Calculate elapsed time since page load
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const currentRemaining = Math.max(0, serverTimeLeft - elapsed);
+          
+          if (currentRemaining <= 0) {
             window.location.href = "https://kamscriptsbypass.xo.je";
             return;
           }
-          document.getElementById("timer").innerText = "⏳ Time left: " + remaining + "s";
-          remaining--;
+          
+          document.getElementById("timer").innerText = "⏳ Time left: " + currentRemaining + "s";
         }
+        
+        // Update timer every second
         setInterval(updateTimer, 1000);
         updateTimer();
+        
+        // Fallback: Force redirect after server time expires
+        setTimeout(function() {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }, ${timeLeft * 1000 + 1000});
       </script>
     </body>
     </html>
@@ -88,12 +106,14 @@ app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  if (ua.includes("Mozilla") || ua.includes("Chrome")) {
+  // Check if it's a browser request
+  if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari") || ua.includes("Edge")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
+  // Check session validity
   if (!isValid(ip)) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
+    return res.status(403).send("Session expired. Please visit the main page first.");
   }
 
   res.set("Content-Type", "text/plain");
@@ -101,3 +121,4 @@ app.get("/raw", (req, res) => {
 });
 
 app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min countdown"));
+

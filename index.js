@@ -2,7 +2,7 @@ const express = require("express");
 
 const app = express();
 
-const activeSessions = {}; // { ip: { expiresAt } }
+const activeSessions = {}; 
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -106,12 +106,12 @@ app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  // Check if it's a browser request
+  
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari") || ua.includes("Edge")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Check session validity
+  
   if (!isValid(ip)) {
     return res.status(403).send("Session expired. Please visit the main page first.");
   }

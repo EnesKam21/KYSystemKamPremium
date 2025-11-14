@@ -80,6 +80,24 @@ function isValid(ip) {
   return true;
 }
 
+// Key'i session ile birlikte döndür - aynı session boyunca aynı key
+function getSessionKey(ip) {
+  const session = activeSessions[ip];
+  if (!session) {
+    // Session yoksa yeni key oluştur
+    return getCachedTenMinuteKey();
+  }
+  
+  // Eğer session'da key varsa, onu döndür
+  if (session.key) {
+    return session.key;
+  }
+  
+  // Session'da key yoksa, yeni key oluştur ve session'a kaydet
+  session.key = getCachedTenMinuteKey();
+  return session.key;
+}
+
 app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
@@ -88,7 +106,7 @@ app.get("/", (req, res) => {
   if (isValid(ip)) {
     const session = activeSessions[ip];
     const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
-    const key = getCachedTenMinuteKey();
+    const key = getSessionKey(ip); // Session key'ini kullan
     
     return res.send(`
       <html>
@@ -137,13 +155,16 @@ app.get("/", (req, res) => {
 
   // Yeni session oluştur - sadece linkvertise'dan geliyorsa
   if (ref.includes("linkvertise.com")) {
+    // Key'i önce oluştur, sonra session'a kaydet
+    const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000  // 30 dakika
+      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
+      key: newKey  // Key'i session'a kaydet
     };
     
     const session = activeSessions[ip];
     const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
-    const key = getCachedTenMinuteKey();
+    const key = session.key; // Session'dan key'i al
 
     return res.send(`
       <html>
@@ -220,15 +241,18 @@ app.get("/raw", (req, res) => {
   // Session kontrolü - eğer session yoksa, yeni bir tane oluştur (daha esnek)
   // Bu sayede oyuna tekrar girildiğinde veya sayfa yenilendiğinde çalışır
   if (!isValid(ip)) {
+    // Yeni key oluştur ve session'a kaydet
+    const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000  // 30 dakika
+      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
+      key: newKey  // Key'i session'a kaydet
     };
   }
   
   res.set("Content-Type", "text/plain");
   res.set("Access-Control-Allow-Origin", "*"); // CORS için
-  // Cache'lenmiş key'i kullan
-  res.send(getCachedTenMinuteKey());
+  // Session key'ini kullan - aynı session boyunca aynı key
+  res.send(getSessionKey(ip));
 });
 
 app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 30-min countdown"));

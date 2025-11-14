@@ -84,83 +84,152 @@ app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  if (!isValid(ip)) {
-    if (ref.includes("linkvertise.com")) {
-      activeSessions[ip] = {
-        expiresAt: Date.now() + 10 * 60 * 1000
-      };
-    } else {
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-  }
-
-  const session = activeSessions[ip];
-  if (!session) return res.redirect("https://kamscriptsbypass.xo.je");
-
-  const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
-  const key = getCachedTenMinuteKey();
-
-  res.send(`
-    <html>
-    <head>
-      <title>KamScripts Premium Key</title>
-      <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
-    </head>
-    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
-      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
-        <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 10 minutes ⚡</p>
-        <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
-      </div>
-      <script>
-        let remaining = ${timeLeft};
-        let startTime = Date.now();
-        let serverTimeLeft = ${timeLeft};
-        
-        function updateTimer() {
-          // Calculate elapsed time since page load
-          const elapsed = Math.floor((Date.now() - startTime) / 1000);
-          const currentRemaining = Math.max(0, serverTimeLeft - elapsed);
+  // Eğer geçerli bir session varsa, direkt key'i göster (sayfa yenileme durumu)
+  if (isValid(ip)) {
+    const session = activeSessions[ip];
+    const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
+    const key = getCachedTenMinuteKey();
+    
+    return res.send(`
+      <html>
+      <head>
+        <title>KamScripts Premium Key</title>
+        <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
+      </head>
+      <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
+        <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
+          <h1>KamScripts Premium Key</h1>
+          <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+          <p>⚡ This key refreshes every 30 minutes ⚡</p>
+          <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
+        </div>
+        <script>
+          let remaining = ${timeLeft};
+          let startTime = Date.now();
+          let serverTimeLeft = ${timeLeft};
           
-          if (currentRemaining <= 0) {
-            window.location.href = "https://kamscriptsbypass.xo.je";
-            return;
+          function updateTimer() {
+            // Calculate elapsed time since page load
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const currentRemaining = Math.max(0, serverTimeLeft - elapsed);
+            
+            if (currentRemaining <= 0) {
+              window.location.href = "https://kamscriptsbypass.xo.je";
+              return;
+            }
+            
+            document.getElementById("timer").innerText = "⏳ Time left: " + currentRemaining + "s";
           }
           
-          document.getElementById("timer").innerText = "⏳ Time left: " + currentRemaining + "s";
-        }
-        
-        // Update timer every second
-        setInterval(updateTimer, 1000);
-        updateTimer();
-        
-        // Fallback: Force redirect after server time expires
-        setTimeout(function() {
-          window.location.href = "https://kamscriptsbypass.xo.je";
-        }, ${timeLeft * 1000 + 1000});
-      </script>
-    </body>
-    </html>
-  `);
+          // Update timer every second
+          setInterval(updateTimer, 1000);
+          updateTimer();
+          
+          // Fallback: Force redirect after server time expires
+          setTimeout(function() {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+          }, ${timeLeft * 1000 + 1000});
+        </script>
+      </body>
+      </html>
+    `);
+  }
+
+  // Yeni session oluştur - sadece linkvertise'dan geliyorsa
+  if (ref.includes("linkvertise.com")) {
+    activeSessions[ip] = {
+      expiresAt: Date.now() + 30 * 60 * 1000  // 30 dakika
+    };
+    
+    const session = activeSessions[ip];
+    const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
+    const key = getCachedTenMinuteKey();
+
+    return res.send(`
+      <html>
+      <head>
+        <title>KamScripts Premium Key</title>
+        <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
+      </head>
+      <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
+        <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
+          <h1>KamScripts Premium Key</h1>
+          <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
+          <p>⚡ This key refreshes every 30 minutes ⚡</p>
+          <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
+        </div>
+        <script>
+          let remaining = ${timeLeft};
+          let startTime = Date.now();
+          let serverTimeLeft = ${timeLeft};
+          
+          function updateTimer() {
+            // Calculate elapsed time since page load
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const currentRemaining = Math.max(0, serverTimeLeft - elapsed);
+            
+            if (currentRemaining <= 0) {
+              window.location.href = "https://kamscriptsbypass.xo.je";
+              return;
+            }
+            
+            document.getElementById("timer").innerText = "⏳ Time left: " + currentRemaining + "s";
+          }
+          
+          // Update timer every second
+          setInterval(updateTimer, 1000);
+          updateTimer();
+          
+          // Fallback: Force redirect after server time expires
+          setTimeout(function() {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+          }, ${timeLeft * 1000 + 1000});
+        </script>
+      </body>
+      </html>
+    `);
+  }
+
+  // Eğer referer yoksa ve session da yoksa, redirect et
+  return res.redirect("https://kamscriptsbypass.xo.je");
 });
 
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari") || ua.includes("Edge")) {
-    return res.redirect("https://kamscriptsbypass.xo.je");
+  // User-agent kontrolü - sadece gerçek browser'ları engelle
+  // Roblox executor'ları ve script'ler farklı user-agent'lar kullanabilir
+  // Eğer user-agent varsa ve browser gibi görünüyorsa ama executor değilse engelle
+  if (ua) {
+    const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
+                      (ua.includes("Mozilla") && ua.includes("Safari")) ||
+                      (ua.includes("Mozilla") && ua.includes("Firefox")) ||
+                      (ua.includes("Edge"));
+    const isExecutor = ua.includes("Roblox") || 
+                       ua.includes("executor") || 
+                       ua.includes("script") ||
+                       ua.includes("HttpService") ||
+                       ua.length < 20; // Kısa user-agent'lar genelde executor'lardan gelir
+    
+    if (isBrowser && !isExecutor) {
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
   }
   
+  // Session kontrolü - eğer session yoksa, yeni bir tane oluştur (daha esnek)
+  // Bu sayede oyuna tekrar girildiğinde veya sayfa yenilendiğinde çalışır
   if (!isValid(ip)) {
-    return res.status(403).send("Session expired. Please visit the main page first.");
+    activeSessions[ip] = {
+      expiresAt: Date.now() + 30 * 60 * 1000  // 30 dakika
+    };
   }
   
   res.set("Content-Type", "text/plain");
+  res.set("Access-Control-Allow-Origin", "*"); // CORS için
   // Cache'lenmiş key'i kullan
   res.send(getCachedTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min countdown"));
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 30-min countdown"));
 

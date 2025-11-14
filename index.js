@@ -7,33 +7,76 @@ const activeSessions = {};
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
+  
+  // Seed'i daha stabil hale getir
+  let currentSeed = seed;
+  
   for (let i = 0; i < 10; i++) {
-    const rand = Math.floor(Math.sin(seed + i) * 10000) % chars.length;
-    key += chars[Math.abs(rand)];
+    // Daha deterministik bir yöntem kullan
+    const sinValue = Math.sin(currentSeed + i);
+    // Negatif değerleri pozitif yap ve mod al
+    const rand = Math.abs(Math.floor(sinValue * 10000)) % chars.length;
+    key += chars[rand];
+    // Seed'i güncelle
+    currentSeed = (currentSeed * 1103515245 + 12345) & 0x7fffffff;
   }
+  
   return key;
 }
 
 function getTenMinuteKey() {
   const date = new Date();
+  // 10 dakikalık blok hesaplama - daha stabil
   const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
-  const seed = parseInt(
-    date.getUTCFullYear().toString() +
-    (date.getUTCMonth() + 1).toString().padStart(2, "0") +
-    date.getUTCDate().toString() +
-    date.getUTCHours().toString().padStart(2, "0") +
-    tenMinuteBlock.toString()
-  );
+  
+  // Seed oluştur - string concatenation yerine matematiksel işlem
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const hour = date.getUTCHours();
+  
+  // Daha stabil seed hesaplama
+  const seed = year * 1000000 + month * 10000 + day * 100 + hour * 10 + tenMinuteBlock;
+  
   return generateKey(seed);
+}
+
+// Key'i cache'le - aynı 10 dakikalık blokta aynı key'i döndür
+let cachedKey = null;
+let cachedKeyTime = null;
+
+function getCachedTenMinuteKey() {
+  const date = new Date();
+  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
+  const hour = date.getUTCHours();
+  const day = date.getUTCDate();
+  const month = date.getUTCMonth();
+  const year = date.getUTCFullYear();
+  
+  // Cache key'i oluştur
+  const cacheKey = `${year}-${month}-${day}-${hour}-${tenMinuteBlock}`;
+  
+  // Eğer cache geçerliyse, aynı key'i döndür
+  if (cachedKey && cachedKeyTime === cacheKey) {
+    return cachedKey;
+  }
+  
+  // Yeni key oluştur ve cache'le
+  cachedKey = getTenMinuteKey();
+  cachedKeyTime = cacheKey;
+  
+  return cachedKey;
 }
 
 function isValid(ip) {
   const session = activeSessions[ip];
   if (!session) return false;
+  
   if (Date.now() > session.expiresAt) {
     delete activeSessions[ip];
     return false;
   }
+  
   return true;
 }
 
@@ -55,7 +98,7 @@ app.get("/", (req, res) => {
   if (!session) return res.redirect("https://kamscriptsbypass.xo.je");
 
   const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
-  const key = getTenMinuteKey();
+  const key = getCachedTenMinuteKey();
 
   res.send(`
     <html>
@@ -105,19 +148,18 @@ app.get("/", (req, res) => {
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-
   
   if (ua.includes("Mozilla") || ua.includes("Chrome") || ua.includes("Safari") || ua.includes("Edge")) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
-
   
   if (!isValid(ip)) {
     return res.status(403).send("Session expired. Please visit the main page first.");
   }
-
+  
   res.set("Content-Type", "text/plain");
-  res.send(getTenMinuteKey());
+  // Cache'lenmiş key'i kullan
+  res.send(getCachedTenMinuteKey());
 });
 
 app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min countdown"));

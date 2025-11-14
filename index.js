@@ -26,8 +26,8 @@ function generateKey(seed) {
 
 function getTenMinuteKey() {
   const date = new Date();
-  // 10 dakikalık blok hesaplama - daha stabil
-  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
+  // 30 dakikalık blok hesaplama - daha stabil
+  const thirtyMinuteBlock = Math.floor(date.getUTCMinutes() / 30);
   
   // Seed oluştur - string concatenation yerine matematiksel işlem
   const year = date.getUTCFullYear();
@@ -35,26 +35,26 @@ function getTenMinuteKey() {
   const day = date.getUTCDate();
   const hour = date.getUTCHours();
   
-  // Daha stabil seed hesaplama
-  const seed = year * 1000000 + month * 10000 + day * 100 + hour * 10 + tenMinuteBlock;
+  // Daha stabil seed hesaplama - 30 dakikalık bloklar için
+  const seed = year * 1000000 + month * 10000 + day * 100 + hour * 10 + thirtyMinuteBlock;
   
   return generateKey(seed);
 }
 
-// Key'i cache'le - aynı 10 dakikalık blokta aynı key'i döndür
+// Key'i cache'le - aynı 30 dakikalık blokta aynı key'i döndür
 let cachedKey = null;
 let cachedKeyTime = null;
 
 function getCachedTenMinuteKey() {
   const date = new Date();
-  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
+  const thirtyMinuteBlock = Math.floor(date.getUTCMinutes() / 30);
   const hour = date.getUTCHours();
   const day = date.getUTCDate();
   const month = date.getUTCMonth();
   const year = date.getUTCFullYear();
   
-  // Cache key'i oluştur
-  const cacheKey = `${year}-${month}-${day}-${hour}-${tenMinuteBlock}`;
+  // Cache key'i oluştur - 30 dakikalık bloklar için
+  const cacheKey = `${year}-${month}-${day}-${hour}-${thirtyMinuteBlock}`;
   
   // Eğer cache geçerliyse, aynı key'i döndür
   if (cachedKey && cachedKeyTime === cacheKey) {

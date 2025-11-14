@@ -1,12 +1,13 @@
 {
-  "name": "kam-key-system",
+  "name": "kamscripts-key-server",
   "version": "1.0.0",
+  "description": "KamScripts Premium Key Server",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cookie-parser": "^1.4.6"
+    "express": "^4.18.2"
   }
 }
+

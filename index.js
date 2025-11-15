@@ -41,7 +41,7 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-// Key'i cache'le - aynı 30 dakikalık blokta aynı key'i döndür
+
 let cachedKey = null;
 let cachedKeyTime = null;
 

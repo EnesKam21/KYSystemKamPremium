@@ -41,7 +41,7 @@ function getTenMinuteKey() {
   return generateKey(seed);
 }
 
-
+// Key'i cache'le - aynı 30 dakikalık blokta aynı key'i döndür
 let cachedKey = null;
 let cachedKeyTime = null;
 
@@ -99,15 +99,29 @@ function getSessionKey(ip) {
 }
 
 app.get("/", (req, res) => {
-  const ref = req.get("referer") || "";
+  const ref = req.get("referer") || req.get("referrer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+
+  // Debug: Referrer'ı logla
+  console.log("Referrer:", ref);
+  console.log("IP:", ip);
 
   // Referrer kontrolü - sadece lootlabs ve türevlerine izin ver
   // Direkt erişim veya başka sitelerden gelenler engellenir
-  const isLootlabs = ref.toLowerCase().includes("lootlabs") || 
-                      ref.toLowerCase().includes("loot-lab") ||
-                      ref.toLowerCase().includes("lootlabs.io") ||
-                      ref.toLowerCase().includes("lootlabs.com");
+  const refLower = ref.toLowerCase();
+  const isLootlabs = refLower.includes("lootlabs") || 
+                      refLower.includes("loot-lab") ||
+                      refLower.includes("loot-link") ||
+                      refLower.includes("lootlink") ||
+                      refLower.includes("loot.link") ||
+                      refLower.includes("lootlabs.io") ||
+                      refLower.includes("lootlabs.com") ||
+                      refLower.includes("loot-link.com") ||
+                      refLower.includes("loot-link.io") ||
+                      refLower.includes("lootlink.com") ||
+                      refLower.includes("lootlink.io");
+  
+  console.log("Is Lootlabs:", isLootlabs);
 
   // Eğer geçerli bir session varsa, direkt key'i göster (sayfa yenileme durumu)
   if (isValid(ip)) {
@@ -218,15 +232,17 @@ app.get("/", (req, res) => {
     `);
   }
 
-  
+  // Eğer referer yoksa ve session da yoksa, redirect et
   return res.redirect("https://kamscriptsbypass.xo.je");
 });
 
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-
   
+  // User-agent kontrolü - sadece gerçek browser'ları engelle
+  // Roblox executor'ları ve script'ler farklı user-agent'lar kullanabilir
+  // Eğer user-agent varsa ve browser gibi görünüyorsa ama executor değilse engelle
   if (ua) {
     const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
                       (ua.includes("Mozilla") && ua.includes("Safari")) ||
@@ -243,19 +259,20 @@ app.get("/raw", (req, res) => {
     }
   }
   
-
+  // Session kontrolü - eğer session yoksa, yeni bir tane oluştur (daha esnek)
+  // Bu sayede oyuna tekrar girildiğinde veya sayfa yenilendiğinde çalışır
   if (!isValid(ip)) {
     // Yeni key oluştur ve session'a kaydet
     const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000,  
-      key: newKey  
+      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
+      key: newKey  // Key'i session'a kaydet
     };
   }
   
   res.set("Content-Type", "text/plain");
-  res.set("Access-Control-Allow-Origin", "*"); 
-  
+  res.set("Access-Control-Allow-Origin", "*"); // CORS için
+  // Session key'ini kullan - aynı session boyunca aynı key
   res.send(getSessionKey(ip));
 });
 

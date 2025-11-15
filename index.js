@@ -106,6 +106,12 @@ app.get("/", (req, res) => {
   console.log("Referrer:", ref);
   console.log("IP:", ip);
 
+  // ÖNEMLİ: Referrer yoksa veya boşsa direkt redirect et (direkt URL yapıştırma engellendi)
+  if (!ref || ref.trim() === "") {
+    console.log("❌ Referrer yok - Direkt erişim engellendi");
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
   // Referrer kontrolü - sadece lootlabs ve türevlerine izin ver
   // Direkt erişim veya başka sitelerden gelenler engellenir
   const refLower = ref.toLowerCase();
@@ -123,7 +129,14 @@ app.get("/", (req, res) => {
   
   console.log("Is Lootlabs:", isLootlabs);
 
+  // Eğer referrer lootlabs değilse, redirect et (güvenlik)
+  if (!isLootlabs) {
+    console.log("❌ Referrer lootlabs değil - Erişim engellendi");
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+
   // Eğer geçerli bir session varsa, direkt key'i göster (sayfa yenileme durumu)
+  // NOT: Sadece lootlabs'tan geldiği doğrulandıktan sonra session kontrolü yapılıyor
   if (isValid(ip)) {
     const session = activeSessions[ip];
     const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));

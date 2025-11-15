@@ -102,6 +102,13 @@ app.get("/", (req, res) => {
   const ref = req.get("referer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
+  // Referrer kontrolü - sadece lootlabs ve türevlerine izin ver
+  // Direkt erişim veya başka sitelerden gelenler engellenir
+  const isLootlabs = ref.toLowerCase().includes("lootlabs") || 
+                      ref.toLowerCase().includes("loot-lab") ||
+                      ref.toLowerCase().includes("lootlabs.io") ||
+                      ref.toLowerCase().includes("lootlabs.com");
+
   // Eğer geçerli bir session varsa, direkt key'i göster (sayfa yenileme durumu)
   if (isValid(ip)) {
     const session = activeSessions[ip];
@@ -153,8 +160,8 @@ app.get("/", (req, res) => {
     `);
   }
 
-  // Yeni session oluştur - sadece linkvertise'dan geliyorsa
-  if (ref.includes("linkvertise.com")) {
+  // Yeni session oluştur - sadece lootlabs'tan geliyorsa
+  if (isLootlabs) {
     // Key'i önce oluştur, sonra session'a kaydet
     const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
@@ -211,17 +218,15 @@ app.get("/", (req, res) => {
     `);
   }
 
-  // Eğer referer yoksa ve session da yoksa, redirect et
+  
   return res.redirect("https://kamscriptsbypass.xo.je");
 });
 
 app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+
   
-  // User-agent kontrolü - sadece gerçek browser'ları engelle
-  // Roblox executor'ları ve script'ler farklı user-agent'lar kullanabilir
-  // Eğer user-agent varsa ve browser gibi görünüyorsa ama executor değilse engelle
   if (ua) {
     const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
                       (ua.includes("Mozilla") && ua.includes("Safari")) ||
@@ -238,20 +243,19 @@ app.get("/raw", (req, res) => {
     }
   }
   
-  // Session kontrolü - eğer session yoksa, yeni bir tane oluştur (daha esnek)
-  // Bu sayede oyuna tekrar girildiğinde veya sayfa yenilendiğinde çalışır
+
   if (!isValid(ip)) {
     // Yeni key oluştur ve session'a kaydet
     const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
-      key: newKey  // Key'i session'a kaydet
+      expiresAt: Date.now() + 30 * 60 * 1000,  
+      key: newKey  
     };
   }
   
   res.set("Content-Type", "text/plain");
-  res.set("Access-Control-Allow-Origin", "*"); // CORS için
-  // Session key'ini kullan - aynı session boyunca aynı key
+  res.set("Access-Control-Allow-Origin", "*"); 
+  
   res.send(getSessionKey(ip));
 });
 

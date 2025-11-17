@@ -8,16 +8,16 @@ function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let key = "";
   
-  // Seed'i daha stabil hale getir
+  
   let currentSeed = seed;
   
   for (let i = 0; i < 10; i++) {
-    // Daha deterministik bir yöntem kullan
+    
     const sinValue = Math.sin(currentSeed + i);
-    // Negatif değerleri pozitif yap ve mod al
+    
     const rand = Math.abs(Math.floor(sinValue * 10000)) % chars.length;
     key += chars[rand];
-    // Seed'i güncelle
+    
     currentSeed = (currentSeed * 1103515245 + 12345) & 0x7fffffff;
   }
   
@@ -26,22 +26,22 @@ function generateKey(seed) {
 
 function getTenMinuteKey() {
   const date = new Date();
-  // 30 dakikalık blok hesaplama - daha stabil
+  
   const thirtyMinuteBlock = Math.floor(date.getUTCMinutes() / 30);
   
-  // Seed oluştur - string concatenation yerine matematiksel işlem
+  
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() + 1;
   const day = date.getUTCDate();
   const hour = date.getUTCHours();
   
-  // Daha stabil seed hesaplama - 30 dakikalık bloklar için
+  
   const seed = year * 1000000 + month * 10000 + day * 100 + hour * 10 + thirtyMinuteBlock;
   
   return generateKey(seed);
 }
 
-// Key'i cache'le - aynı 30 dakikalık blokta aynı key'i döndür
+
 let cachedKey = null;
 let cachedKeyTime = null;
 
@@ -53,15 +53,15 @@ function getCachedTenMinuteKey() {
   const month = date.getUTCMonth();
   const year = date.getUTCFullYear();
   
-  // Cache key'i oluştur - 30 dakikalık bloklar için
+  
   const cacheKey = `${year}-${month}-${day}-${hour}-${thirtyMinuteBlock}`;
   
-  // Eğer cache geçerliyse, aynı key'i döndür
+  
   if (cachedKey && cachedKeyTime === cacheKey) {
     return cachedKey;
   }
   
-  // Yeni key oluştur ve cache'le
+  
   cachedKey = getTenMinuteKey();
   cachedKeyTime = cacheKey;
   
@@ -80,20 +80,20 @@ function isValid(ip) {
   return true;
 }
 
-// Key'i session ile birlikte döndür - aynı session boyunca aynı key
+
 function getSessionKey(ip) {
   const session = activeSessions[ip];
   if (!session) {
-    // Session yoksa yeni key oluştur
+    
     return getCachedTenMinuteKey();
   }
   
-  // Eğer session'da key varsa, onu döndür
+  
   if (session.key) {
     return session.key;
   }
   
-  // Session'da key yoksa, yeni key oluştur ve session'a kaydet
+  
   session.key = getCachedTenMinuteKey();
   return session.key;
 }
@@ -102,19 +102,21 @@ app.get("/", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
 
-  // Debug: Referrer'ı logla
+  
   console.log("Referrer:", ref);
   console.log("IP:", ip);
 
-  // ÖNEMLİ: Referrer yoksa veya boşsa direkt redirect et (direkt URL yapıştırma engellendi)
+  
   if (!ref || ref.trim() === "") {
     console.log("❌ Referrer yok - Direkt erişim engellendi");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Referrer kontrolü - sadece lootlabs ve türevlerine izin ver
-  // Direkt erişim veya başka sitelerden gelenler engellenir
+  
+  
   const refLower = ref.toLowerCase();
+  
+  
   const isLootlabs = refLower.includes("lootlabs") || 
                       refLower.includes("loot-lab") ||
                       refLower.includes("loot-link") ||
@@ -127,16 +129,30 @@ app.get("/", (req, res) => {
                       refLower.includes("lootlink.com") ||
                       refLower.includes("lootlink.io");
   
+  
+  const isLinkvertise = refLower.includes("linkvertise") ||
+                         refLower.includes("link-vertise") ||
+                         refLower.includes("linkvertise.com") ||
+                         refLower.includes("linkvertise.io") ||
+                         refLower.includes("linkvertise.net") ||
+                         refLower.includes("link-vertise.com") ||
+                         refLower.includes("link-vertise.io");
+  
+  
+  const isAllowedReferrer = isLootlabs || isLinkvertise;
+  
   console.log("Is Lootlabs:", isLootlabs);
+  console.log("Is Linkvertise:", isLinkvertise);
+  console.log("Is Allowed:", isAllowedReferrer);
 
-  // Eğer referrer lootlabs değilse, redirect et (güvenlik)
-  if (!isLootlabs) {
-    console.log("❌ Referrer lootlabs değil - Erişim engellendi");
+  
+  if (!isAllowedReferrer) {
+    console.log("❌ Referrer izin verilen sitelerden değil - Erişim engellendi");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
 
-  // Eğer geçerli bir session varsa, direkt key'i göster (sayfa yenileme durumu)
-  // NOT: Sadece lootlabs'tan geldiği doğrulandıktan sonra session kontrolü yapılıyor
+
+
   if (isValid(ip)) {
     const session = activeSessions[ip];
     const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
@@ -187,18 +203,18 @@ app.get("/", (req, res) => {
     `);
   }
 
-  // Yeni session oluştur - sadece lootlabs'tan geliyorsa
-  if (isLootlabs) {
-    // Key'i önce oluştur, sonra session'a kaydet
+  
+  if (isAllowedReferrer) {
+    
     const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
-      key: newKey  // Key'i session'a kaydet
+      expiresAt: Date.now() + 30 * 60 * 1000,  
+      key: newKey  
     };
     
     const session = activeSessions[ip];
     const timeLeft = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
-    const key = session.key; // Session'dan key'i al
+    const key = session.key; 
 
     return res.send(`
       <html>
@@ -245,7 +261,7 @@ app.get("/", (req, res) => {
     `);
   }
 
-  // Eğer referer yoksa ve session da yoksa, redirect et
+  
   return res.redirect("https://kamscriptsbypass.xo.je");
 });
 
@@ -253,9 +269,9 @@ app.get("/raw", (req, res) => {
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  // User-agent kontrolü - sadece gerçek browser'ları engelle
-  // Roblox executor'ları ve script'ler farklı user-agent'lar kullanabilir
-  // Eğer user-agent varsa ve browser gibi görünüyorsa ama executor değilse engelle
+  
+  
+  
   if (ua) {
     const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
                       (ua.includes("Mozilla") && ua.includes("Safari")) ||
@@ -265,27 +281,27 @@ app.get("/raw", (req, res) => {
                        ua.includes("executor") || 
                        ua.includes("script") ||
                        ua.includes("HttpService") ||
-                       ua.length < 20; // Kısa user-agent'lar genelde executor'lardan gelir
+                       ua.length < 20; 
     
     if (isBrowser && !isExecutor) {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
   }
   
-  // Session kontrolü - eğer session yoksa, yeni bir tane oluştur (daha esnek)
-  // Bu sayede oyuna tekrar girildiğinde veya sayfa yenilendiğinde çalışır
+  
+  
   if (!isValid(ip)) {
-    // Yeni key oluştur ve session'a kaydet
+    
     const newKey = getCachedTenMinuteKey();
     activeSessions[ip] = {
-      expiresAt: Date.now() + 30 * 60 * 1000,  // 30 dakika
-      key: newKey  // Key'i session'a kaydet
+      expiresAt: Date.now() + 30 * 60 * 1000,  
+      key: newKey  
     };
   }
   
   res.set("Content-Type", "text/plain");
-  res.set("Access-Control-Allow-Origin", "*"); // CORS için
-  // Session key'ini kullan - aynı session boyunca aynı key
+  res.set("Access-Control-Allow-Origin", "*"); 
+  
   res.send(getSessionKey(ip));
 });
 

@@ -318,31 +318,6 @@ app.get("/raw", (req, res) => {
     return res.status(429).send("Rate limit exceeded");
   }
   
-  if (!ref || ref.trim() === "") {
-    return res.status(403).send("Access denied");
-  }
-  
-  try {
-    const refUrlObj = new URL(ref);
-    const refHostname = refUrlObj.hostname.toLowerCase();
-    const refPath = refUrlObj.pathname.toLowerCase();
-    
-    if (!refHostname.includes("linkvertise.com")) {
-      return res.status(403).send("Access denied");
-    }
-    
-    if (!refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase())) {
-      return res.status(403).send("Access denied");
-    }
-  } catch (e) {
-    return res.status(403).send("Access denied");
-  }
-  
-  if (isSuspiciousRequest(req)) {
-    console.log("❌ [/raw] Suspicious request - IP:", ip);
-    return res.status(403).send("Access denied");
-  }
-  
   if (ua) {
     const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
                       (ua.includes("Mozilla") && ua.includes("Safari")) ||
@@ -352,11 +327,40 @@ app.get("/raw", (req, res) => {
                        ua.includes("executor") || 
                        ua.includes("script") ||
                        ua.includes("HttpService") ||
-                       ua.length < 20;
+                       ua.length < 20 ||
+                       !ua.includes("Mozilla");
+    
+    if (isExecutor) {
+      res.set("Content-Type", "text/plain");
+      res.set("Access-Control-Allow-Origin", "*");
+      return res.send(getCachedTenMinuteKey());
+    }
     
     if (isBrowser && !isExecutor) {
-      return res.redirect("https://kamscriptsbypass.xo.je");
+      if (!ref || ref.trim() === "") {
+        return res.status(403).send("Access denied");
+      }
+      
+      try {
+        const refUrlObj = new URL(ref);
+        const refHostname = refUrlObj.hostname.toLowerCase();
+        const refPath = refUrlObj.pathname.toLowerCase();
+        
+        if (!refHostname.includes("linkvertise.com")) {
+          return res.status(403).send("Access denied");
+        }
+        
+        if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+          return res.status(403).send("Access denied");
+        }
+      } catch (e) {
+        return res.status(403).send("Access denied");
+      }
     }
+  } else {
+    res.set("Content-Type", "text/plain");
+    res.set("Access-Control-Allow-Origin", "*");
+    return res.send(getCachedTenMinuteKey());
   }
   
   res.set("Content-Type", "text/plain");

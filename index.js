@@ -1,6 +1,11 @@
 const express = require("express");
-
 const app = express();
+
+const TARGET_DOMAIN = "ky-system-kam-premium.vercel.app";
+const requestHistory = {};
+const MAX_REQUESTS_PER_MINUTE = 5;
+const verificationTokens = new Map();
+const VERIFICATION_TIMEOUT = 30000;
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -61,54 +66,221 @@ function getCurrentKeyBlockEndTime() {
   return Math.floor((nextBlockDate.getTime() - date.getTime()) / 1000);
 }
 
-app.get("/", (req, res) => {
+function isValidReferrerDomain(ref) {
+  if (!ref || ref.trim() === "") return false;
+  
+  try {
+    const url = new URL(ref);
+    const hostname = url.hostname.toLowerCase();
+    
+    const allowedDomains = [
+      "linkvertise.com",
+      "linkvertise.io",
+      "linkvertise.net",
+      "link-vertise.com",
+      "link-vertise.io",
+      "lootlabs.io",
+      "lootlabs.com",
+      "loot-link.com",
+      "loot-link.io",
+      "lootlink.com",
+      "lootlink.io"
+    ];
+    
+    for (const domain of allowedDomains) {
+      if (hostname === domain || hostname.endsWith("." + domain)) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const minuteAgo = now - 60000;
+  
+  if (!requestHistory[ip]) {
+    requestHistory[ip] = [];
+  }
+  
+  requestHistory[ip] = requestHistory[ip].filter(time => time > minuteAgo);
+  
+  if (requestHistory[ip].length >= MAX_REQUESTS_PER_MINUTE) {
+    return false;
+  }
+  
+  requestHistory[ip].push(now);
+  return true;
+}
+
+function generateVerificationToken() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+function isSuspiciousRequest(req) {
   const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
+  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-
-  console.log("Referrer:", ref);
-  console.log("IP:", ip);
-
+  
   if (!ref || ref.trim() === "") {
-    console.log("❌ Referrer yok - Direkt erişim engellendi");
+    return true;
+  }
+  
+  if (!isValidReferrerDomain(ref)) {
+    return true;
+  }
+  
+  if (origin && !isValidReferrerDomain(origin)) {
+    return true;
+  }
+  
+  const refUrl = ref.toLowerCase();
+  const currentUrl = req.protocol + "://" + req.get("host") + req.originalUrl;
+  
+  if (refUrl.includes(currentUrl.toLowerCase())) {
+    return true;
+  }
+  
+  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
+    return true;
+  }
+  
+  if (ua.length < 10) {
+    return true;
+  }
+  
+  try {
+    const refUrlObj = new URL(ref);
+    const isLinkvertise = refUrlObj.hostname.toLowerCase().includes("linkvertise");
+    
+    if (isLinkvertise) {
+      const redirectParam = refUrlObj.searchParams.get("redirect") || refUrlObj.searchParams.get("r");
+      
+      if (!redirectParam || !redirectParam.toLowerCase().includes(TARGET_DOMAIN.toLowerCase())) {
+        return true;
+      }
+    }
+  } catch (e) {
+    return true;
+  }
+  
+  return false;
+}
+
+app.get("/verify", (req, res) => {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (!ref || ref.trim() === "") {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
-
-  const refLower = ref.toLowerCase();
   
-  const isLootlabs = refLower.includes("lootlabs") || 
-                      refLower.includes("loot-lab") ||
-                      refLower.includes("loot-link") ||
-                      refLower.includes("lootlink") ||
-                      refLower.includes("loot.link") ||
-                      refLower.includes("lootlabs.io") ||
-                      refLower.includes("lootlabs.com") ||
-                      refLower.includes("loot-link.com") ||
-                      refLower.includes("loot-link.io") ||
-                      refLower.includes("lootlink.com") ||
-                      refLower.includes("lootlink.io");
-  
-  const isLinkvertise = refLower.includes("linkvertise") ||
-                         refLower.includes("link-vertise") ||
-                         refLower.includes("linkvertise.com") ||
-                         refLower.includes("linkvertise.io") ||
-                         refLower.includes("linkvertise.net") ||
-                         refLower.includes("link-vertise.com") ||
-                         refLower.includes("link-vertise.io");
-  
-  const isAllowedReferrer = isLootlabs || isLinkvertise;
-  
-  console.log("Is Lootlabs:", isLootlabs);
-  console.log("Is Linkvertise:", isLinkvertise);
-  console.log("Is Allowed:", isAllowedReferrer);
-
-  if (!isAllowedReferrer) {
-    console.log("❌ Referrer izin verilen sitelerden değil - Erişim engellendi");
+  if (!isValidReferrerDomain(ref)) {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
+  
+  if (origin && !isValidReferrerDomain(origin)) {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  try {
+    const refUrlObj = new URL(ref);
+    const isLinkvertise = refUrlObj.hostname.toLowerCase().includes("linkvertise");
+    
+    if (isLinkvertise) {
+      const redirectParam = refUrlObj.searchParams.get("redirect") || refUrlObj.searchParams.get("r");
+      
+      if (!redirectParam || !redirectParam.toLowerCase().includes(TARGET_DOMAIN.toLowerCase())) {
+        console.log("❌ Linkvertise redirect parameter missing or invalid - IP:", ip);
+        return res.redirect("https://kamscriptsbypass.xo.je");
+      }
+    }
+  } catch (e) {
+    console.log("❌ Invalid referrer URL - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ Suspicious request detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const token = generateVerificationToken();
+  const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+  
+  verificationTokens.set(token, {
+    ip: ip,
+    ref: ref,
+    origin: origin,
+    expiresAt: expiresAt,
+    createdAt: Date.now()
+  });
+  
+  setTimeout(() => {
+    verificationTokens.delete(token);
+  }, VERIFICATION_TIMEOUT);
+  
+  return res.redirect(`/?token=${token}`);
+});
 
+app.get("/", (req, res) => {
+  const token = req.query.token;
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (!token) {
+    if (ref && isValidReferrerDomain(ref)) {
+      return res.redirect("/verify?ref=" + encodeURIComponent(ref));
+    }
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const verification = verificationTokens.get(token);
+  
+  if (!verification) {
+    console.log("❌ Invalid or expired token - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (verification.ip !== ip) {
+    console.log("❌ IP mismatch - Token IP:", verification.ip, "Request IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (Date.now() > verification.expiresAt) {
+    console.log("❌ Token expired - IP:", ip);
+    verificationTokens.delete(token);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (Date.now() - verification.createdAt < 2000) {
+    console.log("❌ Request too fast (bypass attempt) - IP:", ip);
+    verificationTokens.delete(token);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  verificationTokens.delete(token);
+  
+  if (!checkRateLimit(ip)) {
+    console.log("❌ Rate limit aşıldı - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ Suspicious request detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
   const key = getCachedTenMinuteKey();
   const timeLeft = getCurrentKeyBlockEndTime();
-
+  
   return res.send(`
     <html>
     <head>
@@ -152,8 +324,31 @@ app.get("/", (req, res) => {
 });
 
 app.get("/raw", (req, res) => {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (!checkRateLimit(ip)) {
+    return res.status(429).send("Rate limit exceeded");
+  }
+  
+  if (!ref || ref.trim() === "") {
+    return res.status(403).send("Access denied");
+  }
+  
+  if (!isValidReferrerDomain(ref)) {
+    return res.status(403).send("Access denied");
+  }
+  
+  if (origin && !isValidReferrerDomain(origin)) {
+    return res.status(403).send("Access denied");
+  }
+  
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ [/raw] Suspicious request - IP:", ip);
+    return res.status(403).send("Access denied");
+  }
   
   if (ua) {
     const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
@@ -176,4 +371,13 @@ app.get("/raw", (req, res) => {
   res.send(getCachedTenMinuteKey());
 });
 
-app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with 10-min countdown"));
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of verificationTokens.entries()) {
+    if (now > data.expiresAt) {
+      verificationTokens.delete(token);
+    }
+  }
+}, 60000);
+
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with bypass protection"));

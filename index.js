@@ -164,10 +164,14 @@ function isSuspiciousRequest(req) {
   return false;
 }
 
+const linkvertiseVisits = new Map();
+
 app.get("/verify", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const origin = req.get("origin") || "";
+  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  const cookies = req.get("cookie") || "";
   
   if (!ref || ref.trim() === "") {
     return res.redirect("https://kamscriptsbypass.xo.je");
@@ -187,6 +191,31 @@ app.get("/verify", (req, res) => {
       console.log("❌ Not from allowed linkvertise URL - IP:", ip, "Path:", refPath);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
+    
+    if (!origin || !origin.toLowerCase().includes("linkvertise.com")) {
+      console.log("❌ Origin not from linkvertise - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (!ua || ua.length < 50 || !ua.includes("Mozilla")) {
+      console.log("❌ Invalid user-agent - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    const visitKey = ip + "-" + Date.now().toString().slice(0, -3);
+    const existingVisit = linkvertiseVisits.get(visitKey);
+    
+    if (existingVisit && (Date.now() - existingVisit) < 10000) {
+      console.log("❌ Duplicate visit detected - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    linkvertiseVisits.set(visitKey, Date.now());
+    
+    setTimeout(() => {
+      linkvertiseVisits.delete(visitKey);
+    }, 120000);
+    
   } catch (e) {
     console.log("❌ Invalid referrer URL - IP:", ip, "Error:", e.message);
     return res.redirect("https://kamscriptsbypass.xo.je");

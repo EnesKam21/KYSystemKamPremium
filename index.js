@@ -67,39 +67,6 @@ function getCurrentKeyBlockEndTime() {
   return Math.floor((nextBlockDate.getTime() - date.getTime()) / 1000);
 }
 
-function isValidReferrerDomain(ref) {
-  if (!ref || ref.trim() === "") return false;
-  
-  try {
-    const url = new URL(ref);
-    const hostname = url.hostname.toLowerCase();
-    
-    const allowedDomains = [
-      "linkvertise.com",
-      "linkvertise.io",
-      "linkvertise.net",
-      "link-vertise.com",
-      "link-vertise.io",
-      "lootlabs.io",
-      "lootlabs.com",
-      "loot-link.com",
-      "loot-link.io",
-      "lootlink.com",
-      "lootlink.io"
-    ];
-    
-    for (const domain of allowedDomains) {
-      if (hostname === domain || hostname.endsWith("." + domain)) {
-        return true;
-      }
-    }
-    
-    return false;
-  } catch (e) {
-    return false;
-  }
-}
-
 function checkRateLimit(ip) {
   const now = Date.now();
   const minuteAgo = now - 60000;
@@ -164,14 +131,10 @@ function isSuspiciousRequest(req) {
   return false;
 }
 
-const linkvertiseVisits = new Map();
-
 app.get("/verify", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const origin = req.get("origin") || "";
-  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
-  const cookies = req.get("cookie") || "";
   
   if (!ref || ref.trim() === "") {
     return res.redirect("https://kamscriptsbypass.xo.je");
@@ -222,7 +185,6 @@ app.get("/verify", (req, res) => {
 app.get("/", (req, res) => {
   const token = req.query.token;
   const ref = req.get("referer") || req.get("referrer") || "";
-  const origin = req.get("origin") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
   if (!token) {
@@ -315,7 +277,6 @@ app.get("/", (req, res) => {
 
 app.get("/raw", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
-  const origin = req.get("origin") || "";
   const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   

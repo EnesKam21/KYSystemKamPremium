@@ -273,7 +273,10 @@ app.post("/verify-turnstile", async (req, res) => {
   res.json({
     success: true,
     token: verificationToken,
-    hash: hash
+    hash: hash,
+    uid: nonceData.uid,
+    timestamp: nonceData.timestamp,
+    signature: nonceData.signature
   });
 });
 
@@ -452,7 +455,14 @@ app.get("/verify", (req, res) => {
             const data = await response.json();
             
             if (data.success) {
-              window.location.href = "/?token=" + data.token + "&hash=" + data.hash;
+              const params = new URLSearchParams({
+                token: data.token,
+                hash: data.hash,
+                uid: data.uid,
+                timestamp: data.timestamp,
+                signature: data.signature
+              });
+              window.location.href = "/?" + params.toString();
             } else {
               document.getElementById("error").style.display = "block";
               document.getElementById("error").textContent = data.error || "Verification failed";

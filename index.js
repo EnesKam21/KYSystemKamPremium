@@ -1,0 +1,745 @@
+require("dotenv").config();
+const express = require("express");
+const crypto = require("crypto");
+const app = express();
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const TARGET_DOMAIN = "ky-system-kam-premium.vercel.app";
+const ALLOWED_LINKVERTISE_PATH = "/success";
+const SECRET_KEY = process.env.SECRET_KEY || "your-secret-key-change-this";
+const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || "";
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
+
+const requestHistory = {};
+const MAX_REQUESTS_PER_MINUTE = 5;
+const verificationTokens = new Map();
+const VERIFICATION_TIMEOUT = 30000;
+const hashTokens = new Map();
+const HASH_TIMEOUT = 15000;
+const nonceTokens = new Map();
+const NONCE_TIMEOUT = 300000;
+
+function generateKey(seed) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let key = "";
+  let currentSeed = seed;
+  
+  for (let i = 0; i < 10; i++) {
+    const sinValue = Math.sin(currentSeed + i);
+    const rand = Math.abs(Math.floor(sinValue * 10000)) % chars.length;
+    key += chars[rand];
+    currentSeed = (currentSeed * 1103515245 + 12345) & 0x7fffffff;
+  }
+  
+  return key;
+}
+
+function getTenMinuteKey() {
+  const date = new Date();
+  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  const hour = date.getUTCHours();
+  const seed = year * 1000000 + month * 10000 + day * 100 + hour * 10 + tenMinuteBlock;
+  return generateKey(seed);
+}
+
+let cachedKey = null;
+let cachedKeyTime = null;
+
+function getCachedTenMinuteKey() {
+  const date = new Date();
+  const tenMinuteBlock = Math.floor(date.getUTCMinutes() / 10);
+  const hour = date.getUTCHours();
+  const day = date.getUTCDate();
+  const month = date.getUTCMonth();
+  const year = date.getUTCFullYear();
+  const cacheKey = `${year}-${month}-${day}-${hour}-${tenMinuteBlock}`;
+  
+  if (cachedKey && cachedKeyTime === cacheKey) {
+    return cachedKey;
+  }
+  
+  cachedKey = getTenMinuteKey();
+  cachedKeyTime = cacheKey;
+  return cachedKey;
+}
+
+function getCurrentKeyBlockEndTime() {
+  const date = new Date();
+  const minutes = date.getUTCMinutes();
+  const tenMinuteBlock = Math.floor(minutes / 10);
+  const nextBlockStart = (tenMinuteBlock + 1) * 10;
+  const nextBlockDate = new Date(date);
+  nextBlockDate.setUTCMinutes(nextBlockStart);
+  nextBlockDate.setUTCSeconds(0);
+  nextBlockDate.setUTCMilliseconds(0);
+  return Math.floor((nextBlockDate.getTime() - date.getTime()) / 1000);
+}
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const minuteAgo = now - 60000;
+  
+  if (!requestHistory[ip]) {
+    requestHistory[ip] = [];
+  }
+  
+  requestHistory[ip] = requestHistory[ip].filter(time => time > minuteAgo);
+  
+  if (requestHistory[ip].length >= MAX_REQUESTS_PER_MINUTE) {
+    return false;
+  }
+  
+  requestHistory[ip].push(now);
+  return true;
+}
+
+function generateVerificationToken() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+function generateNonce() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+function generateHash() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+}
+
+function generateHMAC(uid, timestamp) {
+  const message = `${uid}:${timestamp}`;
+  return crypto.createHmac("sha256", SECRET_KEY).update(message).digest("hex");
+}
+
+function verifyHMAC(uid, timestamp, signature) {
+  const expectedSignature = generateHMAC(uid, timestamp);
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+}
+
+async function verifyTurnstile(token, ip) {
+  if (!TURNSTILE_SECRET_KEY) return true;
+  
+  try {
+    const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        secret: TURNSTILE_SECRET_KEY,
+        response: token,
+        remoteip: ip
+      })
+    });
+    
+    const data = await response.json();
+    return data.success === true;
+  } catch (e) {
+    console.log("Turnstile verification error:", e);
+    return false;
+  }
+}
+
+function isSuspiciousRequest(req) {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ua = req.get("user-agent") || "";
+  
+  if (!ref || ref.trim() === "") {
+    return true;
+  }
+  
+  try {
+    const refUrlObj = new URL(ref);
+    const refHostname = refUrlObj.hostname.toLowerCase();
+    const refPath = refUrlObj.pathname.toLowerCase();
+    
+    if (!refHostname.includes("linkvertise.com")) {
+      return true;
+    }
+    
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+      return true;
+    }
+  } catch (e) {
+    return true;
+  }
+  
+  const refUrl = ref.toLowerCase();
+  const currentUrl = req.protocol + "://" + req.get("host") + req.originalUrl;
+  
+  if (refUrl.includes(currentUrl.toLowerCase())) {
+    return true;
+  }
+  
+  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
+    return true;
+  }
+  
+  if (ua.length < 10) {
+    return true;
+  }
+  
+  return false;
+}
+
+app.get("/init", (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  const nonce = generateNonce();
+  const timestamp = Date.now();
+  const uid = ip.replace(/\./g, "").substring(0, 10);
+  const signature = generateHMAC(uid, timestamp);
+  
+  nonceTokens.set(nonce, {
+    ip: ip,
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    expiresAt: Date.now() + NONCE_TIMEOUT
+  });
+  
+  setTimeout(() => {
+    nonceTokens.delete(nonce);
+  }, NONCE_TIMEOUT);
+  
+  res.json({
+    nonce: nonce,
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    turnstileSiteKey: TURNSTILE_SITE_KEY
+  });
+});
+
+app.post("/verify-turnstile", async (req, res) => {
+  const { token, nonce } = req.body;
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (!nonce || !nonceTokens.has(nonce)) {
+    return res.status(403).json({ success: false, error: "Invalid nonce" });
+  }
+  
+  const nonceData = nonceTokens.get(nonce);
+  
+  if (Date.now() > nonceData.expiresAt) {
+    nonceTokens.delete(nonce);
+    return res.status(403).json({ success: false, error: "Nonce expired" });
+  }
+  
+  if (nonceData.ip !== ip) {
+    return res.status(403).json({ success: false, error: "IP mismatch" });
+  }
+  
+  const turnstileValid = await verifyTurnstile(token, ip);
+  
+  if (!turnstileValid && TURNSTILE_SECRET_KEY) {
+    return res.status(403).json({ success: false, error: "Turnstile verification failed" });
+  }
+  
+  const verificationToken = generateVerificationToken();
+  const hash = generateHash();
+  const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+  const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+  
+  verificationTokens.set(verificationToken, {
+    ref: "",
+    origin: "",
+    expiresAt: expiresAt,
+    createdAt: Date.now(),
+    hash: hash,
+    hashExpiresAt: hashExpiresAt,
+    nonce: nonce,
+    uid: nonceData.uid,
+    timestamp: nonceData.timestamp,
+    signature: nonceData.signature
+  });
+  
+  hashTokens.set(hash, {
+    token: verificationToken,
+    expiresAt: hashExpiresAt,
+    createdAt: Date.now()
+  });
+  
+  nonceTokens.delete(nonce);
+  
+  setTimeout(() => {
+    verificationTokens.delete(verificationToken);
+    hashTokens.delete(hash);
+  }, VERIFICATION_TIMEOUT);
+  
+  res.json({
+    success: true,
+    token: verificationToken,
+    hash: hash
+  });
+});
+
+app.get("/verify", (req, res) => {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
+  const nonce = req.query.nonce;
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (origin && origin.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in origin - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (nonce && nonceTokens.has(nonce)) {
+    const nonceData = nonceTokens.get(nonce);
+    
+    if (Date.now() > nonceData.expiresAt) {
+      nonceTokens.delete(nonce);
+      console.log("❌ Nonce expired - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (nonceData.ip !== ip) {
+      console.log("❌ Nonce IP mismatch - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    const token = generateVerificationToken();
+    const hash = generateHash();
+    const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+    const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+    
+    verificationTokens.set(token, {
+      ref: ref,
+      origin: origin,
+      expiresAt: expiresAt,
+      createdAt: Date.now(),
+      hash: hash,
+      hashExpiresAt: hashExpiresAt,
+      nonce: nonce,
+      uid: nonceData.uid,
+      timestamp: nonceData.timestamp,
+      signature: nonceData.signature
+    });
+    
+    hashTokens.set(hash, {
+      token: token,
+      expiresAt: hashExpiresAt,
+      createdAt: Date.now()
+    });
+    
+    nonceTokens.delete(nonce);
+    
+    setTimeout(() => {
+      verificationTokens.delete(token);
+      hashTokens.delete(hash);
+    }, VERIFICATION_TIMEOUT);
+    
+    return res.redirect(`/?token=${token}&hash=${hash}&uid=${nonceData.uid}&timestamp=${nonceData.timestamp}&signature=${nonceData.signature}`);
+  }
+  
+  if (!ref || ref.trim() === "") {
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  try {
+    const refUrlObj = new URL(ref);
+    const refHostname = refUrlObj.hostname.toLowerCase();
+    const refPath = refUrlObj.pathname.toLowerCase();
+    
+    if (!refHostname.includes("linkvertise.com")) {
+      console.log("❌ Not from linkvertise - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+      console.log("❌ Not from allowed linkvertise URL - IP:", ip, "Path:", refPath);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+  } catch (e) {
+    console.log("❌ Invalid referrer URL - IP:", ip, "Error:", e.message);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ Suspicious request detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const generatedNonce = generateNonce();
+  const timestamp = Date.now();
+  const uid = ip.replace(/\./g, "").substring(0, 10);
+  const signature = generateHMAC(uid, timestamp);
+  
+  nonceTokens.set(generatedNonce, {
+    ip: ip,
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    expiresAt: Date.now() + NONCE_TIMEOUT
+  });
+  
+  setTimeout(() => {
+    nonceTokens.delete(generatedNonce);
+  }, NONCE_TIMEOUT);
+  
+  return res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Verification</title>
+      <meta name="referrer" content="no-referrer">
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    </head>
+    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif; margin:0; padding:100px 20px 20px 20px">
+      <script>
+        if (window.top !== window.self) {
+          window.top.location.href = "https://kamscriptsbypass.xo.je";
+        }
+      </script>
+      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4); max-width:600px; width:100%">
+        <h1 style="margin:0 0 20px 0">Verification Required</h1>
+        <div id="turnstile-container" style="margin:20px 0; display:flex; justify-content:center;"></div>
+        <div id="error" style="color:#ff4444; margin-top:20px; display:none;"></div>
+      </div>
+      <script>
+        const nonce = "${generatedNonce}";
+        const turnstileSiteKey = "${TURNSTILE_SITE_KEY}";
+        let turnstileWidgetId = null;
+        
+        function initTurnstile() {
+          if (!turnstileSiteKey) {
+            proceedWithoutTurnstile();
+            return;
+          }
+          
+          turnstileWidgetId = turnstile.render("#turnstile-container", {
+            sitekey: turnstileSiteKey,
+            callback: function(token) {
+              verifyTurnstile(token);
+            },
+            "error-callback": function() {
+              document.getElementById("error").style.display = "block";
+              document.getElementById("error").textContent = "Verification failed. Please try again.";
+              if (turnstileWidgetId) {
+                turnstile.reset(turnstileWidgetId);
+              }
+            }
+          });
+        }
+        
+        function proceedWithoutTurnstile() {
+          window.location.href = "/verify?nonce=" + nonce;
+        }
+        
+        async function verifyTurnstile(token) {
+          try {
+            const response = await fetch("/verify-turnstile", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                token: token,
+                nonce: nonce
+              })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+              window.location.href = "/?token=" + data.token + "&hash=" + data.hash;
+            } else {
+              document.getElementById("error").style.display = "block";
+              document.getElementById("error").textContent = data.error || "Verification failed";
+              if (turnstileWidgetId) {
+                turnstile.reset(turnstileWidgetId);
+              }
+            }
+          } catch (e) {
+            document.getElementById("error").style.display = "block";
+            document.getElementById("error").textContent = "Network error. Please try again.";
+            if (turnstileWidgetId) {
+              turnstile.reset(turnstileWidgetId);
+            }
+          }
+        }
+        
+        if (typeof turnstile !== "undefined") {
+          initTurnstile();
+        } else {
+          window.addEventListener("load", function() {
+            if (typeof turnstile !== "undefined") {
+              initTurnstile();
+            } else {
+              setTimeout(proceedWithoutTurnstile, 2000);
+            }
+          });
+        }
+        
+        setTimeout(function() {
+          if (!turnstileSiteKey) {
+            proceedWithoutTurnstile();
+          }
+        }, 3000);
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+app.get("/", (req, res) => {
+  const token = req.query.token;
+  const hash = req.query.hash;
+  const uid = req.query.uid;
+  const timestamp = req.query.timestamp;
+  const signature = req.query.signature;
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (!token) {
+    try {
+      if (ref && ref.trim() !== "") {
+        const refUrlObj = new URL(ref);
+        const refHostname = refUrlObj.hostname.toLowerCase();
+        const refPath = refUrlObj.pathname.toLowerCase();
+        
+        if (refHostname.includes("linkvertise.com")) {
+          if (!refPath || refPath === "/" || refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase())) {
+            return res.redirect("/verify?ref=" + encodeURIComponent(ref));
+          }
+        }
+      }
+    } catch (e) {
+    }
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const verification = verificationTokens.get(token);
+  
+  if (!verification) {
+    console.log("❌ Invalid or expired token");
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (Date.now() > verification.expiresAt) {
+    console.log("❌ Token expired");
+    verificationTokens.delete(token);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (uid && timestamp && signature) {
+    if (!verification.uid || !verification.timestamp || !verification.signature) {
+      console.log("❌ Missing HMAC data in token");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (verification.uid !== uid || verification.timestamp !== parseInt(timestamp)) {
+      console.log("❌ HMAC data mismatch");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (!verifyHMAC(uid, timestamp, signature)) {
+      console.log("❌ Invalid HMAC signature");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    const timestampAge = Date.now() - parseInt(timestamp);
+    if (timestampAge > 60000 || timestampAge < 0) {
+      console.log("❌ Timestamp expired or invalid");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+  }
+  
+  if (hash) {
+    const hashData = hashTokens.get(hash);
+    if (!hashData || hashData.token !== token) {
+      console.log("❌ Invalid hash");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (Date.now() > hashData.expiresAt) {
+      console.log("❌ Hash expired");
+      verificationTokens.delete(token);
+      hashTokens.delete(hash);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+  }
+  
+  verificationTokens.delete(token);
+  if (hash) {
+    hashTokens.delete(hash);
+  }
+  
+  if (!checkRateLimit(ip)) {
+    console.log("❌ Rate limit aşıldı - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const key = getCachedTenMinuteKey();
+  const timeLeft = getCurrentKeyBlockEndTime();
+  
+  return res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>KamScripts Premium Key</title>
+      <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
+      <meta name="referrer" content="no-referrer">
+    </head>
+    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif; margin:0; padding:100px 20px 20px 20px">
+      <script>
+        if (window.top !== window.self) {
+          window.top.location.href = "https://kamscriptsbypass.xo.je";
+        }
+        
+        const docRef = document.referrer || "";
+        if (!docRef || !docRef.toLowerCase().includes("linkvertise.com")) {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }
+        
+        if (window.navigator.userAgent.includes("Tampermonkey") || 
+            window.navigator.userAgent.includes("Greasemonkey") || 
+            window.navigator.userAgent.includes("Violentmonkey")) {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }
+      </script>
+      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4); max-width:600px; width:100%">
+        <h1 style="margin:0 0 20px 0">KamScripts Premium Key</h1>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold; margin:15px 0">${key}</div>
+        <p style="margin:15px 0">⚡ This key refreshes every 10 minutes ⚡</p>
+        <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
+        <div style="margin-top:30px; padding:15px; background:#1a1a1a; border-radius:8px; border:1px solid #333">
+          <p style="color:#ffd700; font-size:14px; line-height:1.6; margin:0">
+            ⚠️ If you came from any YouTube channel or someone other than KamScripts Discord, do not follow that person again because they are a fake script developer! The only real one is: <a href="https://discord.gg/BR2Vmfbetp" target="_blank" style="color:#00ffea; text-decoration:underline">https://discord.gg/BR2Vmfbetp</a>
+          </p>
+        </div>
+      </div>
+      <script>
+        let remaining = ${timeLeft};
+        let startTime = Date.now();
+        let serverTimeLeft = ${timeLeft};
+        
+        function updateTimer() {
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          const currentRemaining = Math.max(0, serverTimeLeft - elapsed);
+          
+          if (currentRemaining <= 0) {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+            return;
+          }
+          
+          const timerEl = document.getElementById("timer");
+          if (timerEl) {
+            timerEl.innerText = "⏳ Time left: " + currentRemaining + "s";
+          }
+        }
+        
+        setInterval(updateTimer, 1000);
+        updateTimer();
+        
+        setTimeout(function() {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }, ${timeLeft * 1000 + 1000});
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+app.get("/raw", (req, res) => {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ua = req.get("user-agent") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (!checkRateLimit(ip)) {
+    return res.status(429).send("Rate limit exceeded");
+  }
+  
+  if (ua) {
+    const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
+                      (ua.includes("Mozilla") && ua.includes("Safari")) ||
+                      (ua.includes("Mozilla") && ua.includes("Firefox")) ||
+                      (ua.includes("Edge"));
+    const isExecutor = ua.includes("Roblox") || 
+                       ua.includes("executor") || 
+                       ua.includes("script") ||
+                       ua.includes("HttpService") ||
+                       ua.length < 20 ||
+                       !ua.includes("Mozilla");
+    
+    if (isExecutor) {
+      res.set("Content-Type", "text/plain");
+      res.set("Access-Control-Allow-Origin", "*");
+      return res.send(getCachedTenMinuteKey());
+    }
+    
+    if (isBrowser && !isExecutor) {
+      if (!ref || ref.trim() === "") {
+        return res.status(403).send("Access denied");
+      }
+      
+      try {
+        const refUrlObj = new URL(ref);
+        const refHostname = refUrlObj.hostname.toLowerCase();
+        const refPath = refUrlObj.pathname.toLowerCase();
+        
+        if (!refHostname.includes("linkvertise.com")) {
+          return res.status(403).send("Access denied");
+        }
+        
+        if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+          return res.status(403).send("Access denied");
+        }
+      } catch (e) {
+        return res.status(403).send("Access denied");
+      }
+    }
+  } else {
+    res.set("Content-Type", "text/plain");
+    res.set("Access-Control-Allow-Origin", "*");
+    return res.send(getCachedTenMinuteKey());
+  }
+  
+  res.set("Content-Type", "text/plain");
+  res.set("Access-Control-Allow-Origin", "*");
+  res.send(getCachedTenMinuteKey());
+});
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of verificationTokens.entries()) {
+    if (now > data.expiresAt) {
+      verificationTokens.delete(token);
+      if (data.hash) {
+        hashTokens.delete(data.hash);
+      }
+    }
+  }
+  for (const [hash, data] of hashTokens.entries()) {
+    if (now > data.expiresAt) {
+      hashTokens.delete(hash);
+    }
+  }
+  for (const [nonce, data] of nonceTokens.entries()) {
+    if (now > data.expiresAt) {
+      nonceTokens.delete(nonce);
+    }
+  }
+}, 60000);
+
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with advanced bypass protection"));

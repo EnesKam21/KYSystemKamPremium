@@ -1,0 +1,45 @@
+===========================================
+GIT KURULUMU VE PUSH KOMUTLARI
+===========================================
+
+1. GIT'İ YÜKLEME:
+   - https://git-scm.com/download/win adresinden indirin
+   - Kurulum sihirbazını çalıştırın
+   - Varsayılan ayarlarla "Next" butonlarına tıklayın
+
+2. GIT'İ YAPILANDIRMA (PowerShell'de):
+   git config --global user.name "Adınız"
+   git config --global user.email "email@example.com"
+
+3. GITHUB'DA REPOSITORY OLUŞTURMA:
+   - https://github.com/ adresine gidin
+   - "+" butonuna tıklayın → "New repository"
+   - Repository adını girin → "Create repository"
+   - URL'yi kopyalayın (örn: https://github.com/kullanici/repo.git)
+
+4. PROJEYİ GIT'E EKLEME VE PUSH (PowerShell'de):
+   
+   cd "C:\Users\enesk\OneDrive\Desktop\yeni"
+   git init
+   git add .
+   git commit -m "Initial commit: KamScripts Key Server"
+   git remote add origin https://github.com/KULLANICI_ADINIZ/REPO_ADI.git
+   git branch -M main
+   git push -u origin main
+
+5. PERSONAL ACCESS TOKEN (İlk push için gerekli):
+   - GitHub → Settings → Developer settings → Personal access tokens
+   - "Generate new token (classic)" → repo scope'u seçin
+   - Token'ı kopyalayın
+   - Push sırasında password yerine token'ı kullanın
+
+6. SONRAKI PUSH'LAR İÇİN:
+   git add .
+   git commit -m "Değişiklik açıklaması"
+   git push
+
+===========================================
+ÖNEMLİ: .env dosyası .gitignore'da olduğu için
+GitHub'a yüklenmeyecek! Secret key'leriniz güvende.
+===========================================
+

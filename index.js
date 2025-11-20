@@ -7,6 +7,7 @@ const requestHistory = {};
 const MAX_REQUESTS_PER_MINUTE = 5;
 const verificationTokens = new Map();
 const VERIFICATION_TIMEOUT = 30000;
+const linkvertiseAccessSessions = new Map();
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -139,7 +140,7 @@ function isSuspiciousRequest(req) {
       return true;
     }
     
-    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
       return true;
     }
   } catch (e) {
@@ -187,7 +188,18 @@ app.get("/verify", (req, res) => {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
-    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+    if (refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+      linkvertiseAccessSessions.set(ip, Date.now());
+      setTimeout(() => {
+        linkvertiseAccessSessions.delete(ip);
+      }, 30000);
+    } else if (refPath.includes("/success")) {
+      const accessTime = linkvertiseAccessSessions.get(ip);
+      if (!accessTime || (Date.now() - accessTime) > 30000) {
+        console.log("❌ /success without valid /access session - IP:", ip);
+        return res.redirect("https://kamscriptsbypass.xo.je");
+      }
+    } else if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
       console.log("❌ Not from allowed linkvertise link - IP:", ip, "Path:", refPath);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
@@ -233,7 +245,18 @@ app.get("/", (req, res) => {
         const refPath = refUrlObj.pathname.toLowerCase();
         
         if (refHostname.includes("linkvertise.com")) {
-          if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+          if (refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+            linkvertiseAccessSessions.set(ip, Date.now());
+            setTimeout(() => {
+              linkvertiseAccessSessions.delete(ip);
+            }, 30000);
+            return res.redirect("/verify?ref=" + encodeURIComponent(ref));
+          } else if (refPath.includes("/success")) {
+            const accessTime = linkvertiseAccessSessions.get(ip);
+            if (accessTime && (Date.now() - accessTime) <= 30000) {
+              return res.redirect("/verify?ref=" + encodeURIComponent(ref));
+            }
+          } else if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
             return res.redirect("/verify?ref=" + encodeURIComponent(ref));
           }
         }
@@ -355,7 +378,7 @@ app.get("/raw", (req, res) => {
           return res.status(403).send("Access denied");
         }
         
-        if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+        if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/success")) {
           return res.status(403).send("Access denied");
         }
       } catch (e) {

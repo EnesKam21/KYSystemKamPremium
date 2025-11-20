@@ -245,6 +245,11 @@ app.get("/", (req, res) => {
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
         <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
+        <div style="margin-top:30px; padding:15px; background:#1a1a1a; border-radius:8px; border:1px solid #333">
+          <p style="color:#ffd700; font-size:14px; line-height:1.6; margin:0">
+            ⚠️ If you came from any YouTube channel or someone other than KamScripts Discord, do not follow that person again because they are a fake script developer! The only real one is: <a href="https://discord.gg/BR2Vmfbetp" target="_blank" style="color:#00ffea; text-decoration:underline">https://discord.gg/BR2Vmfbetp</a>
+          </p>
+        </div>
       </div>
       <script>
         let remaining = ${timeLeft};

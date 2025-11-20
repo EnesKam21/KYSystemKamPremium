@@ -2,12 +2,11 @@ const express = require("express");
 const app = express();
 
 const TARGET_DOMAIN = "ky-system-kam-premium.vercel.app";
-const ALLOWED_LINKVERTISE_ID = "1349121/gR80QtCJWhbJ";
+const ALLOWED_LINKVERTISE_PATH = "/success";
 const requestHistory = {};
 const MAX_REQUESTS_PER_MINUTE = 5;
 const verificationTokens = new Map();
 const VERIFICATION_TIMEOUT = 30000;
-const linkvertiseAccessSessions = new Map();
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -140,10 +139,7 @@ function isSuspiciousRequest(req) {
       return true;
     }
     
-    if (refPath.includes("/success")) {
-      return false;
-    }
-    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
       return true;
     }
   } catch (e) {
@@ -191,8 +187,8 @@ app.get("/verify", (req, res) => {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
-    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/success")) {
-      console.log("❌ Not from allowed linkvertise link - IP:", ip, "Path:", refPath);
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+      console.log("❌ Not from allowed linkvertise URL - IP:", ip, "Path:", refPath);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
@@ -237,7 +233,7 @@ app.get("/", (req, res) => {
         const refPath = refUrlObj.pathname.toLowerCase();
         
         if (refHostname.includes("linkvertise.com")) {
-          if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) || refPath.includes("/success")) {
+          if (!refPath || refPath === "/" || refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase())) {
             return res.redirect("/verify?ref=" + encodeURIComponent(ref));
           }
         }
@@ -287,9 +283,6 @@ app.get("/", (req, res) => {
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
         <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
-      </div>
-      <div style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#ff4444; color:#fff; padding:15px 25px; border-radius:10px; max-width:90%; text-align:center; font-size:14px; box-shadow:0 4px 15px rgba(255,68,68,0.4); z-index:1000;">
-        <strong>⚠️ WARNING:</strong> If you came from any YouTube channel or someone other than KamScripts, do not follow that person again. Our only official Discord: <a href="https://discord.gg/BR2Vmfbetp" style="color:#ffd700; text-decoration:underline;" target="_blank">https://discord.gg/BR2Vmfbetp</a>
       </div>
       <script>
         let remaining = ${timeLeft};
@@ -362,7 +355,7 @@ app.get("/raw", (req, res) => {
           return res.status(403).send("Access denied");
         }
         
-        if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/success")) {
+        if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
           return res.status(403).send("Access denied");
         }
       } catch (e) {

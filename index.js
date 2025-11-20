@@ -2,7 +2,7 @@ const express = require("express");
 const app = express();
 
 const TARGET_DOMAIN = "ky-system-kam-premium.vercel.app";
-const ALLOWED_LINKVERTISE_PATH = "/success";
+const ALLOWED_LINKVERTISE_ID = "1349121/gR80QtCJWhbJ";
 const requestHistory = {};
 const MAX_REQUESTS_PER_MINUTE = 5;
 const verificationTokens = new Map();
@@ -139,7 +139,7 @@ function isSuspiciousRequest(req) {
       return true;
     }
     
-    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
       return true;
     }
   } catch (e) {
@@ -187,8 +187,8 @@ app.get("/verify", (req, res) => {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
-    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
-      console.log("❌ Not from allowed linkvertise URL - IP:", ip, "Path:", refPath);
+    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+      console.log("❌ Not from allowed linkvertise link - IP:", ip, "Path:", refPath);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
@@ -233,7 +233,7 @@ app.get("/", (req, res) => {
         const refPath = refUrlObj.pathname.toLowerCase();
         
         if (refHostname.includes("linkvertise.com")) {
-          if (!refPath || refPath === "/" || refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase())) {
+          if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
             return res.redirect("/verify?ref=" + encodeURIComponent(ref));
           }
         }
@@ -355,7 +355,7 @@ app.get("/raw", (req, res) => {
           return res.status(403).send("Access denied");
         }
         
-        if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+        if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
           return res.status(403).send("Access denied");
         }
       } catch (e) {

@@ -243,6 +243,8 @@ app.post("/verify-turnstile", async (req, res) => {
   const hash = generateHash();
   const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
   const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+  const newTimestamp = Date.now();
+  const newSignature = generateHMAC(nonceData.uid, newTimestamp);
   
   verificationTokens.set(verificationToken, {
     ref: "",
@@ -253,8 +255,8 @@ app.post("/verify-turnstile", async (req, res) => {
     hashExpiresAt: hashExpiresAt,
     nonce: nonce,
     uid: nonceData.uid,
-    timestamp: nonceData.timestamp,
-    signature: nonceData.signature
+    timestamp: newTimestamp,
+    signature: newSignature
   });
   
   hashTokens.set(hash, {
@@ -275,8 +277,8 @@ app.post("/verify-turnstile", async (req, res) => {
     token: verificationToken,
     hash: hash,
     uid: nonceData.uid,
-    timestamp: nonceData.timestamp,
-    signature: nonceData.signature
+    timestamp: newTimestamp,
+    signature: newSignature
   });
 });
 
@@ -314,6 +316,8 @@ app.get("/verify", (req, res) => {
     const hash = generateHash();
     const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
     const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+    const newTimestamp = Date.now();
+    const newSignature = generateHMAC(nonceData.uid, newTimestamp);
     
     verificationTokens.set(token, {
       ref: ref,
@@ -324,8 +328,8 @@ app.get("/verify", (req, res) => {
       hashExpiresAt: hashExpiresAt,
       nonce: nonce,
       uid: nonceData.uid,
-      timestamp: nonceData.timestamp,
-      signature: nonceData.signature
+      timestamp: newTimestamp,
+      signature: newSignature
     });
     
     hashTokens.set(hash, {
@@ -341,7 +345,7 @@ app.get("/verify", (req, res) => {
       hashTokens.delete(hash);
     }, VERIFICATION_TIMEOUT);
     
-    return res.redirect(`/?token=${token}&hash=${hash}&uid=${nonceData.uid}&timestamp=${nonceData.timestamp}&signature=${nonceData.signature}`);
+    return res.redirect(`/?token=${token}&hash=${hash}&uid=${nonceData.uid}&timestamp=${newTimestamp}&signature=${newSignature}`);
   }
   
   if (!ref || ref.trim() === "") {
@@ -549,26 +553,26 @@ app.get("/", (req, res) => {
   
   if (uid && timestamp && signature) {
     if (!verification.uid || !verification.timestamp || !verification.signature) {
-      console.log("❌ Missing HMAC data in token");
+      console.log("❌ Missing HMAC data in token - verification:", verification);
       verificationTokens.delete(token);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
     if (verification.uid !== uid || verification.timestamp !== parseInt(timestamp)) {
-      console.log("❌ HMAC data mismatch");
+      console.log("❌ HMAC data mismatch - verification uid:", verification.uid, "request uid:", uid, "verification timestamp:", verification.timestamp, "request timestamp:", timestamp);
       verificationTokens.delete(token);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
     if (!verifyHMAC(uid, timestamp, signature)) {
-      console.log("❌ Invalid HMAC signature");
+      console.log("❌ Invalid HMAC signature - uid:", uid, "timestamp:", timestamp, "signature:", signature);
       verificationTokens.delete(token);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
     const timestampAge = Date.now() - parseInt(timestamp);
-    if (timestampAge > 60000 || timestampAge < 0) {
-      console.log("❌ Timestamp expired or invalid");
+    if (timestampAge > 300000 || timestampAge < 0) {
+      console.log("❌ Timestamp expired or invalid - age:", timestampAge, "ms");
       verificationTokens.delete(token);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }

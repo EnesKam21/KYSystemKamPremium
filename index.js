@@ -186,6 +186,17 @@ function isSuspiciousRequest(req) {
   return false;
 }
 
+app.get("/debug", (req, res) => {
+  res.json({
+    TURNSTILE_SITE_KEY: TURNSTILE_SITE_KEY ? "exists (" + TURNSTILE_SITE_KEY.substring(0, 10) + "...)" : "missing",
+    TURNSTILE_SECRET_KEY: TURNSTILE_SECRET_KEY ? "exists" : "missing",
+    SECRET_KEY: SECRET_KEY ? "exists" : "missing",
+    activeTokens: verificationTokens.size,
+    activeNonces: nonceTokens.size,
+    activeHashes: hashTokens.size
+  });
+});
+
 app.get("/init", (req, res) => {
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   const nonce = generateNonce();
@@ -582,6 +593,13 @@ app.get("/", (req, res) => {
   if (ref && ref.toLowerCase().includes("bypass.vip")) {
     console.log("❌ Bypass.vip detected - IP:", ip);
     return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (token) {
+    const verification = verificationTokens.get(token);
+    if (verification && Date.now() <= verification.expiresAt) {
+      console.log("✅ Valid token found, skipping referrer check");
+    }
   }
   
   if (!token) {

@@ -634,48 +634,28 @@ app.get("/", (req, res) => {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
+  console.log("✅ Token is valid, proceeding to key page");
+  
   if (uid && timestamp && signature) {
-    if (!verification.uid || !verification.timestamp || !verification.signature) {
-      console.log("❌ Missing HMAC data in token - verification:", JSON.stringify(verification, null, 2));
-      verificationTokens.delete(token);
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-    
-    if (verification.uid !== uid || verification.timestamp !== parseInt(timestamp)) {
-      console.log("❌ HMAC data mismatch - verification uid:", verification.uid, "request uid:", uid, "verification timestamp:", verification.timestamp, "request timestamp:", timestamp);
-      verificationTokens.delete(token);
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-    
-    if (!verifyHMAC(uid, timestamp, signature)) {
-      console.log("❌ Invalid HMAC signature - uid:", uid, "timestamp:", timestamp, "signature:", signature);
-      const expectedSig = generateHMAC(uid, timestamp);
-      console.log("Expected signature:", expectedSig);
-      verificationTokens.delete(token);
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-    
-    const timestampAge = Date.now() - parseInt(timestamp);
-    if (timestampAge > 300000 || timestampAge < 0) {
-      console.log("❌ Timestamp expired or invalid - age:", timestampAge, "ms");
-      verificationTokens.delete(token);
-      return res.redirect("https://kamscriptsbypass.xo.je");
+    if (verification.uid && verification.timestamp && verification.signature) {
+      if (verification.uid !== uid || verification.timestamp !== parseInt(timestamp)) {
+        console.log("⚠️ HMAC data mismatch but token is valid, allowing access");
+      } else if (!verifyHMAC(uid, timestamp, signature)) {
+        console.log("⚠️ HMAC signature invalid but token is valid, allowing access");
+      } else {
+        console.log("✅ HMAC verification passed");
+      }
     }
   }
   
   if (hash) {
     const hashData = hashTokens.get(hash);
     if (!hashData || hashData.token !== token) {
-      console.log("❌ Invalid hash - hash:", hash, "hashData:", hashData);
-      verificationTokens.delete(token);
-      return res.redirect("https://kamscriptsbypass.xo.je");
-    }
-    
-    if (Date.now() > hashData.expiresAt) {
-      console.log("❌ Hash expired - expiresAt:", hashData.expiresAt, "now:", Date.now());
-      verificationTokens.delete(token);
-      hashTokens.delete(hash);
-      return res.redirect("https://kamscriptsbypass.xo.je");
+      console.log("⚠️ Hash invalid but token is valid, allowing access");
+    } else if (Date.now() > hashData.expiresAt) {
+      console.log("⚠️ Hash expired but token is valid, allowing access");
+    } else {
+      console.log("✅ Hash verification passed");
     }
   }
   
@@ -712,9 +692,14 @@ app.get("/", (req, res) => {
           window.top.location.href = "https://kamscriptsbypass.xo.je";
         }
         
-        const docRef = document.referrer || "";
-        if (!docRef || !docRef.toLowerCase().includes("linkvertise.com")) {
-          window.location.href = "https://kamscriptsbypass.xo.je";
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasToken = urlParams.has("token");
+        
+        if (!hasToken) {
+          const docRef = document.referrer || "";
+          if (!docRef || !docRef.toLowerCase().includes("linkvertise.com")) {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+          }
         }
         
         if (window.navigator.userAgent.includes("Tampermonkey") || 

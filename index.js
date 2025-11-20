@@ -218,24 +218,31 @@ app.post("/verify-turnstile", async (req, res) => {
   const { token, nonce } = req.body;
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
+  console.log("🔍 /verify-turnstile - nonce:", nonce ? "exists" : "missing", "token:", token ? "exists" : "missing", "IP:", ip);
+  
   if (!nonce || !nonceTokens.has(nonce)) {
+    console.log("❌ Invalid nonce - nonce:", nonce, "available nonces:", Array.from(nonceTokens.keys()));
     return res.status(403).json({ success: false, error: "Invalid nonce" });
   }
   
   const nonceData = nonceTokens.get(nonce);
   
   if (Date.now() > nonceData.expiresAt) {
+    console.log("❌ Nonce expired - expiresAt:", nonceData.expiresAt, "now:", Date.now());
     nonceTokens.delete(nonce);
     return res.status(403).json({ success: false, error: "Nonce expired" });
   }
   
   if (nonceData.ip !== ip) {
+    console.log("❌ IP mismatch - nonceData.ip:", nonceData.ip, "request ip:", ip);
     return res.status(403).json({ success: false, error: "IP mismatch" });
   }
   
   const turnstileValid = await verifyTurnstile(token, ip);
+  console.log("🔍 Turnstile validation - valid:", turnstileValid, "TURNSTILE_SECRET_KEY:", TURNSTILE_SECRET_KEY ? "exists" : "missing");
   
   if (!turnstileValid && TURNSTILE_SECRET_KEY) {
+    console.log("❌ Turnstile verification failed");
     return res.status(403).json({ success: false, error: "Turnstile verification failed" });
   }
   
@@ -245,6 +252,8 @@ app.post("/verify-turnstile", async (req, res) => {
   const hashExpiresAt = Date.now() + HASH_TIMEOUT;
   const newTimestamp = Date.now();
   const newSignature = generateHMAC(nonceData.uid, newTimestamp);
+  
+  console.log("✅ Creating verification token - uid:", nonceData.uid, "timestamp:", newTimestamp);
   
   verificationTokens.set(verificationToken, {
     ref: "",
@@ -272,14 +281,17 @@ app.post("/verify-turnstile", async (req, res) => {
     hashTokens.delete(hash);
   }, VERIFICATION_TIMEOUT);
   
-  res.json({
+  const response = {
     success: true,
     token: verificationToken,
     hash: hash,
     uid: nonceData.uid,
     timestamp: newTimestamp,
     signature: newSignature
-  });
+  };
+  
+  console.log("✅ Sending response:", response);
+  res.json(response);
 });
 
 app.get("/verify", (req, res) => {
@@ -457,8 +469,19 @@ app.get("/verify", (req, res) => {
             });
             
             const data = await response.json();
+            console.log("🔍 Turnstile response:", data);
             
             if (data.success) {
+              if (!data.token || !data.hash || !data.uid || !data.timestamp || !data.signature) {
+                console.error("❌ Missing data in response:", data);
+                document.getElementById("error").style.display = "block";
+                document.getElementById("error").textContent = "Verification response incomplete. Please try again.";
+                if (turnstileWidgetId) {
+                  turnstile.reset(turnstileWidgetId);
+                }
+                return;
+              }
+              
               const params = new URLSearchParams({
                 token: data.token,
                 hash: data.hash,
@@ -466,8 +489,11 @@ app.get("/verify", (req, res) => {
                 timestamp: data.timestamp,
                 signature: data.signature
               });
+              
+              console.log("🔍 Redirecting to:", "/?" + params.toString());
               window.location.href = "/?" + params.toString();
             } else {
+              console.error("❌ Verification failed:", data.error);
               document.getElementById("error").style.display = "block";
               document.getElementById("error").textContent = data.error || "Verification failed";
               if (turnstileWidgetId) {
@@ -515,7 +541,7 @@ app.get("/", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  console.log("🔍 / endpoint - token:", token ? "exists" : "missing", "hash:", hash ? "exists" : "missing", "uid:", uid ? "exists" : "missing");
+  console.log("🔍 / endpoint - token:", token ? "exists" : "missing", "hash:", hash ? "exists" : "missing", "uid:", uid ? "exists" : "missing", "referer:", ref);
   
   if (ref && ref.toLowerCase().includes("bypass.vip")) {
     console.log("❌ Bypass.vip detected - IP:", ip);
@@ -544,7 +570,7 @@ app.get("/", (req, res) => {
   const verification = verificationTokens.get(token);
   
   if (!verification) {
-    console.log("❌ Invalid or expired token - token:", token);
+    console.log("❌ Invalid or expired token - token:", token, "available tokens:", Array.from(verificationTokens.keys()));
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   

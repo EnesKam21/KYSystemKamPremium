@@ -134,7 +134,23 @@ function isSuspiciousRequest(req) {
 app.get("/verify", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const origin = req.get("origin") || "";
+  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
+    console.log("❌ User script detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in referrer - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (origin && origin.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in origin - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
   
   if (!ref || ref.trim() === "") {
     return res.redirect("https://kamscriptsbypass.xo.je");
@@ -160,11 +176,6 @@ app.get("/verify", (req, res) => {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  if (isSuspiciousRequest(req)) {
-    console.log("❌ Suspicious request detected - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-  
   const token = generateVerificationToken();
   const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
   
@@ -185,7 +196,24 @@ app.get("/verify", (req, res) => {
 app.get("/", (req, res) => {
   const token = req.query.token;
   const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
+  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  
+  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
+    console.log("❌ User script detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in referrer - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (origin && origin.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in origin - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
   
   if (!token) {
     try {
@@ -219,16 +247,6 @@ app.get("/", (req, res) => {
   }
   
   verificationTokens.delete(token);
-  
-  if (!checkRateLimit(ip)) {
-    console.log("❌ Rate limit aşıldı - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-  
-  if (isSuspiciousRequest(req)) {
-    console.log("❌ Suspicious request detected - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
   
   const key = getCachedTenMinuteKey();
   const timeLeft = getCurrentKeyBlockEndTime();

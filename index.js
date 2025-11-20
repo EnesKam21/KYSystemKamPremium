@@ -430,33 +430,51 @@ app.get("/verify", (req, res) => {
         const turnstileSiteKey = "${TURNSTILE_SITE_KEY}";
         let turnstileWidgetId = null;
         
+        console.log("🔍 Initializing - nonce:", nonce, "turnstileSiteKey:", turnstileSiteKey ? "exists" : "missing");
+        
         function initTurnstile() {
+          console.log("🔍 initTurnstile called");
           if (!turnstileSiteKey) {
+            console.log("⚠️ No Turnstile Site Key, proceeding without Turnstile");
             proceedWithoutTurnstile();
             return;
           }
           
-          turnstileWidgetId = turnstile.render("#turnstile-container", {
-            sitekey: turnstileSiteKey,
-            callback: function(token) {
-              verifyTurnstile(token);
-            },
-            "error-callback": function() {
-              document.getElementById("error").style.display = "block";
-              document.getElementById("error").textContent = "Verification failed. Please try again.";
-              if (turnstileWidgetId) {
-                turnstile.reset(turnstileWidgetId);
+          console.log("🔍 Rendering Turnstile widget");
+          try {
+            turnstileWidgetId = turnstile.render("#turnstile-container", {
+              sitekey: turnstileSiteKey,
+              callback: function(token) {
+                console.log("✅ Turnstile callback triggered with token:", token ? "exists" : "missing");
+                verifyTurnstile(token);
+              },
+              "error-callback": function() {
+                console.error("❌ Turnstile error callback triggered");
+                document.getElementById("error").style.display = "block";
+                document.getElementById("error").textContent = "Verification failed. Please try again.";
+                if (turnstileWidgetId) {
+                  turnstile.reset(turnstileWidgetId);
+                }
               }
-            }
-          });
+            });
+            console.log("✅ Turnstile widget rendered, ID:", turnstileWidgetId);
+          } catch (e) {
+            console.error("❌ Error rendering Turnstile:", e);
+            document.getElementById("error").style.display = "block";
+            document.getElementById("error").textContent = "Failed to load verification. Please refresh the page.";
+          }
         }
         
         function proceedWithoutTurnstile() {
+          console.log("🔍 Proceeding without Turnstile, redirecting to /verify?nonce=" + nonce);
           window.location.href = "/verify?nonce=" + nonce;
         }
         
         async function verifyTurnstile(token) {
+          console.log("🔍 verifyTurnstile called with token:", token ? "exists" : "missing", "nonce:", nonce);
+          
           try {
+            console.log("🔍 Sending request to /verify-turnstile");
             const response = await fetch("/verify-turnstile", {
               method: "POST",
               headers: {
@@ -467,6 +485,19 @@ app.get("/verify", (req, res) => {
                 nonce: nonce
               })
             });
+            
+            console.log("🔍 Response status:", response.status);
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+              console.error("❌ Response not OK:", errorData);
+              document.getElementById("error").style.display = "block";
+              document.getElementById("error").textContent = errorData.error || "Verification failed";
+              if (turnstileWidgetId) {
+                turnstile.reset(turnstileWidgetId);
+              }
+              return;
+            }
             
             const data = await response.json();
             console.log("🔍 Turnstile response:", data);
@@ -490,8 +521,12 @@ app.get("/verify", (req, res) => {
                 signature: data.signature
               });
               
-              console.log("🔍 Redirecting to:", "/?" + params.toString());
-              window.location.href = "/?" + params.toString();
+              const redirectUrl = "/?" + params.toString();
+              console.log("🔍 Redirecting to:", redirectUrl);
+              
+              setTimeout(() => {
+                window.location.href = redirectUrl;
+              }, 100);
             } else {
               console.error("❌ Verification failed:", data.error);
               document.getElementById("error").style.display = "block";
@@ -501,8 +536,9 @@ app.get("/verify", (req, res) => {
               }
             }
           } catch (e) {
+            console.error("❌ Network error:", e);
             document.getElementById("error").style.display = "block";
-            document.getElementById("error").textContent = "Network error. Please try again.";
+            document.getElementById("error").textContent = "Network error: " + e.message + ". Please try again.";
             if (turnstileWidgetId) {
               turnstile.reset(turnstileWidgetId);
             }

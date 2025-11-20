@@ -140,6 +140,9 @@ function isSuspiciousRequest(req) {
       return true;
     }
     
+    if (refPath.includes("/success")) {
+      return false;
+    }
     if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
       return true;
     }
@@ -192,10 +195,10 @@ app.get("/verify", (req, res) => {
       linkvertiseAccessSessions.set(ip, Date.now());
       setTimeout(() => {
         linkvertiseAccessSessions.delete(ip);
-      }, 30000);
+      }, 60000);
     } else if (refPath.includes("/success")) {
       const accessTime = linkvertiseAccessSessions.get(ip);
-      if (!accessTime || (Date.now() - accessTime) > 30000) {
+      if (!accessTime || (Date.now() - accessTime) > 60000) {
         console.log("❌ /success without valid /access session - IP:", ip);
         return res.redirect("https://kamscriptsbypass.xo.je");
       }
@@ -249,11 +252,11 @@ app.get("/", (req, res) => {
             linkvertiseAccessSessions.set(ip, Date.now());
             setTimeout(() => {
               linkvertiseAccessSessions.delete(ip);
-            }, 30000);
+            }, 60000);
             return res.redirect("/verify?ref=" + encodeURIComponent(ref));
           } else if (refPath.includes("/success")) {
             const accessTime = linkvertiseAccessSessions.get(ip);
-            if (accessTime && (Date.now() - accessTime) <= 30000) {
+            if (accessTime && (Date.now() - accessTime) <= 60000) {
               return res.redirect("/verify?ref=" + encodeURIComponent(ref));
             }
           } else if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {

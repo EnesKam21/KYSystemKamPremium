@@ -7,6 +7,8 @@ const requestHistory = {};
 const MAX_REQUESTS_PER_MINUTE = 5;
 const verificationTokens = new Map();
 const VERIFICATION_TIMEOUT = 30000;
+const hashTokens = new Map();
+const HASH_TIMEOUT = 15000;
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -89,6 +91,10 @@ function generateVerificationToken() {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
+function generateHash() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+}
+
 function isSuspiciousRequest(req) {
   const ref = req.get("referer") || req.get("referrer") || "";
   const ua = req.get("user-agent") || "";
@@ -134,16 +140,10 @@ function isSuspiciousRequest(req) {
 app.get("/verify", (req, res) => {
   const ref = req.get("referer") || req.get("referrer") || "";
   const origin = req.get("origin") || "";
-  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
-    console.log("❌ User script detected - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-  
   if (ref && ref.toLowerCase().includes("bypass.vip")) {
-    console.log("❌ Bypass.vip detected in referrer - IP:", ip);
+    console.log("❌ Bypass.vip detected - IP:", ip);
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
@@ -176,42 +176,47 @@ app.get("/verify", (req, res) => {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ Suspicious request detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
   const token = generateVerificationToken();
+  const hash = generateHash();
   const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+  const hashExpiresAt = Date.now() + HASH_TIMEOUT;
   
   verificationTokens.set(token, {
     ref: ref,
     origin: origin,
     expiresAt: expiresAt,
+    createdAt: Date.now(),
+    hash: hash,
+    hashExpiresAt: hashExpiresAt
+  });
+  
+  hashTokens.set(hash, {
+    token: token,
+    expiresAt: hashExpiresAt,
     createdAt: Date.now()
   });
   
   setTimeout(() => {
     verificationTokens.delete(token);
+    hashTokens.delete(hash);
   }, VERIFICATION_TIMEOUT);
   
-  return res.redirect(`/?token=${token}`);
+  return res.redirect(`/?token=${token}&hash=${hash}`);
 });
 
 app.get("/", (req, res) => {
   const token = req.query.token;
+  const hash = req.query.hash;
   const ref = req.get("referer") || req.get("referrer") || "";
-  const origin = req.get("origin") || "";
-  const ua = req.get("user-agent") || "";
   const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
-    console.log("❌ User script detected - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-  
   if (ref && ref.toLowerCase().includes("bypass.vip")) {
-    console.log("❌ Bypass.vip detected in referrer - IP:", ip);
-    return res.redirect("https://kamscriptsbypass.xo.je");
-  }
-  
-  if (origin && origin.toLowerCase().includes("bypass.vip")) {
-    console.log("❌ Bypass.vip detected in origin - IP:", ip);
+    console.log("❌ Bypass.vip detected - IP:", ip);
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
@@ -246,22 +251,64 @@ app.get("/", (req, res) => {
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
+  if (hash) {
+    const hashData = hashTokens.get(hash);
+    if (!hashData || hashData.token !== token) {
+      console.log("❌ Invalid hash");
+      verificationTokens.delete(token);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (Date.now() > hashData.expiresAt) {
+      console.log("❌ Hash expired");
+      verificationTokens.delete(token);
+      hashTokens.delete(hash);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+  }
+  
   verificationTokens.delete(token);
+  if (hash) {
+    hashTokens.delete(hash);
+  }
+  
+  if (!checkRateLimit(ip)) {
+    console.log("❌ Rate limit aşıldı - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
   
   const key = getCachedTenMinuteKey();
   const timeLeft = getCurrentKeyBlockEndTime();
   
   return res.send(`
+    <!DOCTYPE html>
     <html>
     <head>
       <title>KamScripts Premium Key</title>
       <meta http-equiv="refresh" content="${timeLeft + 1};url=https://kamscriptsbypass.xo.je">
+      <meta name="referrer" content="no-referrer">
     </head>
-    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif">
-      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4)">
-        <h1>KamScripts Premium Key</h1>
-        <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
-        <p>⚡ This key refreshes every 10 minutes ⚡</p>
+    <body style="background:#111; color:#ffd700; text-align:center; padding-top:100px; font-family:sans-serif; margin:0; padding:100px 20px 20px 20px">
+      <script>
+        if (window.top !== window.self) {
+          window.top.location.href = "https://kamscriptsbypass.xo.je";
+        }
+        
+        const docRef = document.referrer || "";
+        if (!docRef || !docRef.toLowerCase().includes("linkvertise.com")) {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }
+        
+        if (window.navigator.userAgent.includes("Tampermonkey") || 
+            window.navigator.userAgent.includes("Greasemonkey") || 
+            window.navigator.userAgent.includes("Violentmonkey")) {
+          window.location.href = "https://kamscriptsbypass.xo.je";
+        }
+      </script>
+      <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4); max-width:600px; width:100%">
+        <h1 style="margin:0 0 20px 0">KamScripts Premium Key</h1>
+        <div style="color:#00ffea; font-size:22px; font-weight:bold; margin:15px 0">${key}</div>
+        <p style="margin:15px 0">⚡ This key refreshes every 10 minutes ⚡</p>
         <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
         <div style="margin-top:30px; padding:15px; background:#1a1a1a; border-radius:8px; border:1px solid #333">
           <p style="color:#ffd700; font-size:14px; line-height:1.6; margin:0">
@@ -283,7 +330,10 @@ app.get("/", (req, res) => {
             return;
           }
           
-          document.getElementById("timer").innerText = "⏳ Time left: " + currentRemaining + "s";
+          const timerEl = document.getElementById("timer");
+          if (timerEl) {
+            timerEl.innerText = "⏳ Time left: " + currentRemaining + "s";
+          }
         }
         
         setInterval(updateTimer, 1000);
@@ -362,6 +412,14 @@ setInterval(() => {
   for (const [token, data] of verificationTokens.entries()) {
     if (now > data.expiresAt) {
       verificationTokens.delete(token);
+      if (data.hash) {
+        hashTokens.delete(data.hash);
+      }
+    }
+  }
+  for (const [hash, data] of hashTokens.entries()) {
+    if (now > data.expiresAt) {
+      hashTokens.delete(hash);
     }
   }
 }, 60000);

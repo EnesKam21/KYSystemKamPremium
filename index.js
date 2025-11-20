@@ -191,18 +191,7 @@ app.get("/verify", (req, res) => {
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
     
-    if (refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
-      linkvertiseAccessSessions.set(ip, Date.now());
-      setTimeout(() => {
-        linkvertiseAccessSessions.delete(ip);
-      }, 60000);
-    } else if (refPath.includes("/success")) {
-      const accessTime = linkvertiseAccessSessions.get(ip);
-      if (!accessTime || (Date.now() - accessTime) > 60000) {
-        console.log("❌ /success without valid /access session - IP:", ip);
-        return res.redirect("https://kamscriptsbypass.xo.je");
-      }
-    } else if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+    if (!refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) && !refPath.includes("/success")) {
       console.log("❌ Not from allowed linkvertise link - IP:", ip, "Path:", refPath);
       return res.redirect("https://kamscriptsbypass.xo.je");
     }
@@ -248,18 +237,7 @@ app.get("/", (req, res) => {
         const refPath = refUrlObj.pathname.toLowerCase();
         
         if (refHostname.includes("linkvertise.com")) {
-          if (refPath.includes("/access/" + ALLOWED_LINKVERTISE_ID.toLowerCase())) {
-            linkvertiseAccessSessions.set(ip, Date.now());
-            setTimeout(() => {
-              linkvertiseAccessSessions.delete(ip);
-            }, 60000);
-            return res.redirect("/verify?ref=" + encodeURIComponent(ref));
-          } else if (refPath.includes("/success")) {
-            const accessTime = linkvertiseAccessSessions.get(ip);
-            if (accessTime && (Date.now() - accessTime) <= 60000) {
-              return res.redirect("/verify?ref=" + encodeURIComponent(ref));
-            }
-          } else if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase())) {
+          if (refPath.includes(ALLOWED_LINKVERTISE_ID.toLowerCase()) || refPath.includes("/success")) {
             return res.redirect("/verify?ref=" + encodeURIComponent(ref));
           }
         }
@@ -309,6 +287,9 @@ app.get("/", (req, res) => {
         <div style="color:#00ffea; font-size:22px; font-weight:bold">${key}</div>
         <p>⚡ This key refreshes every 10 minutes ⚡</p>
         <p id="timer" style="color:#ff4444; font-size:18px; margin-top:15px"></p>
+      </div>
+      <div style="position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:#ff4444; color:#fff; padding:15px 25px; border-radius:10px; max-width:90%; text-align:center; font-size:14px; box-shadow:0 4px 15px rgba(255,68,68,0.4); z-index:1000;">
+        <strong>⚠️ WARNING:</strong> If you came from any YouTube channel or someone other than KamScripts, do not follow that person again. Our only official Discord: <a href="https://discord.gg/BR2Vmfbetp" style="color:#ffd700; text-decoration:underline;" target="_blank">https://discord.gg/BR2Vmfbetp</a>
       </div>
       <script>
         let remaining = ${timeLeft};

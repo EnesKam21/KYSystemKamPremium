@@ -6,17 +6,20 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+const TARGET_DOMAIN = "ky-system-kam-premium.vercel.app";
+const ALLOWED_LINKVERTISE_PATH = "/success";
 const SECRET_KEY = process.env.SECRET_KEY || "your-secret-key-change-this";
 const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || "";
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || "";
-const LINKVERTISE_URL = process.env.LINKVERTISE_URL || "https://linkvertise.com/1349121/gR80QtCWhbJ";
 
 const requestHistory = {};
 const MAX_REQUESTS_PER_MINUTE = 5;
-const nonceStore = new Map();
+const verificationTokens = new Map();
+const VERIFICATION_TIMEOUT = 30000;
+const hashTokens = new Map();
+const HASH_TIMEOUT = 15000;
+const nonceTokens = new Map();
 const NONCE_TIMEOUT = 300000;
-const verifiedSessions = new Map();
-const SESSION_TIMEOUT = 300000;
 
 function generateKey(seed) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -95,39 +98,30 @@ function checkRateLimit(ip) {
   return true;
 }
 
-function generateNonce() {
-  return crypto.randomBytes(32).toString("hex");
+function generateVerificationToken() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
-function generateSessionId() {
+function generateNonce() {
   return crypto.randomBytes(16).toString("hex");
 }
 
-function getIPSubnet(ip) {
-  if (!ip || ip === "unknown") return null;
-  const parts = ip.split(".");
-  if (parts.length === 4) {
-    return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
-  }
-  return null;
+function generateHash() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
 }
 
-function isSameSubnet(ip1, ip2) {
-  const subnet1 = getIPSubnet(ip1);
-  const subnet2 = getIPSubnet(ip2);
-  if (!subnet1 || !subnet2) return false;
-  return subnet1 === subnet2;
+function generateHMAC(uid, timestamp) {
+  const message = `${uid}:${timestamp}`;
+  return crypto.createHmac("sha256", SECRET_KEY).update(message).digest("hex");
+}
+
+function verifyHMAC(uid, timestamp, signature) {
+  const expectedSignature = generateHMAC(uid, timestamp);
+  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
 }
 
 async function verifyTurnstile(token, ip) {
-  if (!TURNSTILE_SECRET_KEY) {
-    console.log("⚠️ TURNSTILE_SECRET_KEY not set, skipping verification");
-    return true;
-  }
-  
-  if (!token) {
-    return false;
-  }
+  if (!TURNSTILE_SECRET_KEY) return true;
   
   try {
     const response = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
@@ -145,147 +139,283 @@ async function verifyTurnstile(token, ip) {
     const data = await response.json();
     return data.success === true;
   } catch (e) {
-    console.log("❌ Turnstile verification error:", e);
+    console.log("Turnstile verification error:", e);
     return false;
   }
 }
 
-function getClientIP(req) {
-  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || 
-         req.headers["x-real-ip"] || 
-         req.connection.remoteAddress || 
-         req.socket.remoteAddress ||
-         "unknown";
-}
-
-app.get("/start", (req, res) => {
-  const ip = getClientIP(req);
+function isSuspiciousRequest(req) {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ua = req.get("user-agent") || "";
   
-  if (!checkRateLimit(ip)) {
-    console.log("❌ Rate limit exceeded - IP:", ip);
-    return res.status(429).json({ error: "Rate limit exceeded" });
+  if (!ref || ref.trim() === "") {
+    return true;
   }
   
-  const nonce = generateNonce();
-  const expiresAt = Date.now() + NONCE_TIMEOUT;
+  try {
+    const refUrlObj = new URL(ref);
+    const refHostname = refUrlObj.hostname.toLowerCase();
+    const refPath = refUrlObj.pathname.toLowerCase();
+    
+    if (!refHostname.includes("linkvertise.com")) {
+      return true;
+    }
+    
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+      return true;
+    }
+  } catch (e) {
+    return true;
+  }
   
-  nonceStore.set(nonce, {
+  const refUrl = ref.toLowerCase();
+  const currentUrl = req.protocol + "://" + req.get("host") + req.originalUrl;
+  
+  if (refUrl.includes(currentUrl.toLowerCase())) {
+    return true;
+  }
+  
+  if (ua.includes("Tampermonkey") || ua.includes("Greasemonkey") || ua.includes("Violentmonkey")) {
+    return true;
+  }
+  
+  if (ua.length < 10) {
+    return true;
+  }
+  
+  return false;
+}
+
+app.get("/debug", (req, res) => {
+  res.json({
+    TURNSTILE_SITE_KEY: TURNSTILE_SITE_KEY ? "exists (" + TURNSTILE_SITE_KEY.substring(0, 10) + "...)" : "missing",
+    TURNSTILE_SECRET_KEY: TURNSTILE_SECRET_KEY ? "exists" : "missing",
+    SECRET_KEY: SECRET_KEY ? "exists" : "missing",
+    activeTokens: verificationTokens.size,
+    activeNonces: nonceTokens.size,
+    activeHashes: hashTokens.size
+  });
+});
+
+app.get("/init", (req, res) => {
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
+  const nonce = generateNonce();
+  const timestamp = Date.now();
+  const uid = ip.replace(/\./g, "").substring(0, 10);
+  const signature = generateHMAC(uid, timestamp);
+  
+  nonceTokens.set(nonce, {
     ip: ip,
-    createdAt: Date.now(),
-    expiresAt: expiresAt,
-    used: false
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    expiresAt: Date.now() + NONCE_TIMEOUT
   });
   
   setTimeout(() => {
-    nonceStore.delete(nonce);
+    nonceTokens.delete(nonce);
   }, NONCE_TIMEOUT);
   
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
-  const redirectUrl = `${baseUrl}/verify?nonce=${encodeURIComponent(nonce)}`;
+  res.json({
+    nonce: nonce,
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    turnstileSiteKey: TURNSTILE_SITE_KEY
+  });
+});
+
+app.post("/verify-turnstile", async (req, res) => {
+  const { token, nonce } = req.body;
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  let linkvertiseUrl;
-  try {
-    linkvertiseUrl = new URL(LINKVERTISE_URL);
-  } catch (e) {
-    console.log("❌ Invalid LINKVERTISE_URL:", LINKVERTISE_URL);
-    return res.status(500).send("Invalid Linkvertise URL configuration");
+  console.log("🔍 /verify-turnstile - nonce:", nonce ? "exists" : "missing", "token:", token ? "exists" : "missing", "IP:", ip);
+  
+  if (!nonce || !nonceTokens.has(nonce)) {
+    console.log("❌ Invalid nonce - nonce:", nonce, "available nonces:", Array.from(nonceTokens.keys()));
+    return res.status(403).json({ success: false, error: "Invalid nonce" });
   }
   
-  linkvertiseUrl.searchParams.delete("r");
-  linkvertiseUrl.searchParams.delete("redirect");
-  linkvertiseUrl.searchParams.set("r", redirectUrl);
+  const nonceData = nonceTokens.get(nonce);
   
-  console.log("✅ Nonce generated - IP:", ip, "nonce:", nonce.substring(0, 8) + "...");
-  console.log("🔍 Redirect URL:", redirectUrl);
-  console.log("🔍 Linkvertise URL:", linkvertiseUrl.toString());
+  if (Date.now() > nonceData.expiresAt) {
+    console.log("❌ Nonce expired - expiresAt:", nonceData.expiresAt, "now:", Date.now());
+    nonceTokens.delete(nonce);
+    return res.status(403).json({ success: false, error: "Nonce expired" });
+  }
   
-  return res.redirect(linkvertiseUrl.toString());
+  if (nonceData.ip !== ip) {
+    console.log("❌ IP mismatch - nonceData.ip:", nonceData.ip, "request ip:", ip);
+    return res.status(403).json({ success: false, error: "IP mismatch" });
+  }
+  
+  const turnstileValid = await verifyTurnstile(token, ip);
+  console.log("🔍 Turnstile validation - valid:", turnstileValid, "TURNSTILE_SECRET_KEY:", TURNSTILE_SECRET_KEY ? "exists" : "missing");
+  
+  if (!turnstileValid && TURNSTILE_SECRET_KEY) {
+    console.log("❌ Turnstile verification failed");
+    return res.status(403).json({ success: false, error: "Turnstile verification failed" });
+  }
+  
+  const verificationToken = generateVerificationToken();
+  const hash = generateHash();
+  const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+  const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+  const newTimestamp = Date.now();
+  const newSignature = generateHMAC(nonceData.uid, newTimestamp);
+  
+  console.log("✅ Creating verification token - uid:", nonceData.uid, "timestamp:", newTimestamp);
+  
+  verificationTokens.set(verificationToken, {
+    ref: "",
+    origin: "",
+    expiresAt: expiresAt,
+    createdAt: Date.now(),
+    hash: hash,
+    hashExpiresAt: hashExpiresAt,
+    nonce: nonce,
+    uid: nonceData.uid,
+    timestamp: newTimestamp,
+    signature: newSignature
+  });
+  
+  hashTokens.set(hash, {
+    token: verificationToken,
+    expiresAt: hashExpiresAt,
+    createdAt: Date.now()
+  });
+  
+  nonceTokens.delete(nonce);
+  
+  setTimeout(() => {
+    verificationTokens.delete(verificationToken);
+    hashTokens.delete(hash);
+  }, VERIFICATION_TIMEOUT);
+  
+  const response = {
+    success: true,
+    token: verificationToken,
+    hash: hash,
+    uid: nonceData.uid,
+    timestamp: newTimestamp,
+    signature: newSignature
+  };
+  
+  console.log("✅ Sending response:", response);
+  res.json(response);
 });
 
 app.get("/verify", (req, res) => {
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const origin = req.get("origin") || "";
   const nonce = req.query.nonce;
-  const ip = getClientIP(req);
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  if (!nonce) {
-    console.log("❌ No nonce parameter - IP:", ip);
-    return res.status(403).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Access Denied</title>
-        <meta http-equiv="refresh" content="3;url=https://kamscriptsbypass.xo.je">
-      </head>
-      <body style="background:#111; color:#ff4444; text-align:center; padding-top:100px; font-family:sans-serif;">
-        <h1>Access Denied</h1>
-        <p>Invalid verification request.</p>
-        <p>Redirecting...</p>
-      </body>
-      </html>
-    `);
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  if (!nonceStore.has(nonce)) {
-    console.log("❌ Nonce not found in store - IP:", ip);
-    return res.status(403).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Access Denied</title>
-        <meta http-equiv="refresh" content="3;url=https://kamscriptsbypass.xo.je">
-      </head>
-      <body style="background:#111; color:#ff4444; text-align:center; padding-top:100px; font-family:sans-serif;">
-        <h1>Access Denied</h1>
-        <p>Invalid or expired verification token.</p>
-        <p>Redirecting...</p>
-      </body>
-      </html>
-    `);
+  if (origin && origin.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected in origin - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  const nonceData = nonceStore.get(nonce);
-  
-  if (nonceData.used) {
-    console.log("❌ Nonce already used - IP:", ip);
-    return res.status(403).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Access Denied</title>
-        <meta http-equiv="refresh" content="3;url=https://kamscriptsbypass.xo.je">
-      </head>
-      <body style="background:#111; color:#ff4444; text-align:center; padding-top:100px; font-family:sans-serif;">
-        <h1>Access Denied</h1>
-        <p>Verification token already used.</p>
-        <p>Redirecting...</p>
-      </body>
-      </html>
-    `);
+  if (nonce && nonceTokens.has(nonce)) {
+    const nonceData = nonceTokens.get(nonce);
+    
+    if (Date.now() > nonceData.expiresAt) {
+      nonceTokens.delete(nonce);
+      console.log("❌ Nonce expired - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (nonceData.ip !== ip) {
+      console.log("❌ Nonce IP mismatch - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    const token = generateVerificationToken();
+    const hash = generateHash();
+    const expiresAt = Date.now() + VERIFICATION_TIMEOUT;
+    const hashExpiresAt = Date.now() + HASH_TIMEOUT;
+    const newTimestamp = Date.now();
+    const newSignature = generateHMAC(nonceData.uid, newTimestamp);
+    
+    verificationTokens.set(token, {
+      ref: ref,
+      origin: origin,
+      expiresAt: expiresAt,
+      createdAt: Date.now(),
+      hash: hash,
+      hashExpiresAt: hashExpiresAt,
+      nonce: nonce,
+      uid: nonceData.uid,
+      timestamp: newTimestamp,
+      signature: newSignature
+    });
+    
+    hashTokens.set(hash, {
+      token: token,
+      expiresAt: hashExpiresAt,
+      createdAt: Date.now()
+    });
+    
+    nonceTokens.delete(nonce);
+    
+    setTimeout(() => {
+      verificationTokens.delete(token);
+      hashTokens.delete(hash);
+    }, VERIFICATION_TIMEOUT);
+    
+    return res.redirect(`/?token=${token}&hash=${hash}&uid=${nonceData.uid}&timestamp=${newTimestamp}&signature=${newSignature}`);
   }
   
-  if (Date.now() > nonceData.expiresAt) {
-    console.log("❌ Nonce expired - IP:", ip);
-    nonceStore.delete(nonce);
-    return res.status(403).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Access Denied</title>
-        <meta http-equiv="refresh" content="3;url=https://kamscriptsbypass.xo.je">
-      </head>
-      <body style="background:#111; color:#ff4444; text-align:center; padding-top:100px; font-family:sans-serif;">
-        <h1>Access Denied</h1>
-        <p>Verification token expired.</p>
-        <p>Redirecting...</p>
-      </body>
-      </html>
-    `);
+  if (!ref || ref.trim() === "") {
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  if (!isSameSubnet(nonceData.ip, ip)) {
-    console.log("⚠️ IP subnet mismatch - stored IP:", nonceData.ip, "request IP:", ip, "but allowing with soft check");
+  try {
+    const refUrlObj = new URL(ref);
+    const refHostname = refUrlObj.hostname.toLowerCase();
+    const refPath = refUrlObj.pathname.toLowerCase();
+    
+    if (!refHostname.includes("linkvertise.com")) {
+      console.log("❌ Not from linkvertise - IP:", ip);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+    if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+      console.log("❌ Not from allowed linkvertise URL - IP:", ip, "Path:", refPath);
+      return res.redirect("https://kamscriptsbypass.xo.je");
+    }
+    
+  } catch (e) {
+    console.log("❌ Invalid referrer URL - IP:", ip, "Error:", e.message);
+    return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  console.log("✅ Nonce verified, showing Turnstile page - IP:", ip);
+  if (isSuspiciousRequest(req)) {
+    console.log("❌ Suspicious request detected - IP:", ip);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  const generatedNonce = generateNonce();
+  const timestamp = Date.now();
+  const uid = ip.replace(/\./g, "").substring(0, 10);
+  const signature = generateHMAC(uid, timestamp);
+  
+  nonceTokens.set(generatedNonce, {
+    ip: ip,
+    uid: uid,
+    timestamp: timestamp,
+    signature: signature,
+    expiresAt: Date.now() + NONCE_TIMEOUT
+  });
+  
+  setTimeout(() => {
+    nonceTokens.delete(generatedNonce);
+  }, NONCE_TIMEOUT);
   
   return res.send(`
     <!DOCTYPE html>
@@ -307,182 +437,246 @@ app.get("/verify", (req, res) => {
         <div id="error" style="color:#ff4444; margin-top:20px; display:none;"></div>
       </div>
       <script>
-        const nonce = "${nonce}";
+        const nonce = "${generatedNonce}";
         const turnstileSiteKey = "${TURNSTILE_SITE_KEY}";
         let turnstileWidgetId = null;
         
-        if (!turnstileSiteKey) {
-          document.getElementById("error").style.display = "block";
-          document.getElementById("error").textContent = "Turnstile not configured. Please contact administrator.";
-        } else {
-          function initTurnstile() {
-            try {
-              turnstileWidgetId = turnstile.render("#turnstile-container", {
-                sitekey: turnstileSiteKey,
-                callback: async function(token) {
-                  try {
-                    const response = await fetch("/verify-turnstile", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json"
-                      },
-                      body: JSON.stringify({
-                        nonce: nonce,
-                        turnstileToken: token
-                      })
-                    });
-                    
-                    if (response.redirected) {
-                      window.location.href = response.url;
-                    } else if (response.ok) {
-                      const data = await response.json();
-                      if (data.session) {
-                        window.location.href = "/?session=" + data.session;
-                      } else {
-                        throw new Error("No session received");
-                      }
-                    } else {
-                      throw new Error("Verification failed");
-                    }
-                  } catch (e) {
-                    document.getElementById("error").style.display = "block";
-                    document.getElementById("error").textContent = "Verification failed. Please try again.";
-                    if (turnstileWidgetId) {
-                      turnstile.reset(turnstileWidgetId);
-                    }
-                  }
-                },
-                "error-callback": function() {
-                  document.getElementById("error").style.display = "block";
-                  document.getElementById("error").textContent = "Verification failed. Please try again.";
-                  if (turnstileWidgetId) {
-                    turnstile.reset(turnstileWidgetId);
-                  }
-                }
-              });
-            } catch (e) {
-              document.getElementById("error").style.display = "block";
-              document.getElementById("error").textContent = "Failed to load Turnstile. Please refresh the page.";
-            }
+        console.log("🔍 Initializing - nonce:", nonce, "turnstileSiteKey:", turnstileSiteKey ? "exists" : "missing");
+        
+        function initTurnstile() {
+          console.log("🔍 initTurnstile called");
+          if (!turnstileSiteKey) {
+            console.log("⚠️ No Turnstile Site Key, proceeding without Turnstile");
+            proceedWithoutTurnstile();
+            return;
           }
           
-          if (typeof turnstile !== "undefined") {
-            initTurnstile();
-          } else {
-            window.addEventListener("load", function() {
-              if (typeof turnstile !== "undefined") {
-                initTurnstile();
-              } else {
-                setTimeout(function() {
-                  document.getElementById("error").style.display = "block";
-                  document.getElementById("error").textContent = "Failed to load Turnstile. Please refresh the page.";
-                }, 3000);
+          console.log("🔍 Rendering Turnstile widget");
+          try {
+            turnstileWidgetId = turnstile.render("#turnstile-container", {
+              sitekey: turnstileSiteKey,
+              callback: function(token) {
+                console.log("✅ Turnstile callback triggered with token:", token ? "exists" : "missing");
+                verifyTurnstile(token);
+              },
+              "error-callback": function() {
+                console.error("❌ Turnstile error callback triggered");
+                document.getElementById("error").style.display = "block";
+                document.getElementById("error").textContent = "Verification failed. Please try again.";
+                if (turnstileWidgetId) {
+                  turnstile.reset(turnstileWidgetId);
+                }
               }
             });
+            console.log("✅ Turnstile widget rendered, ID:", turnstileWidgetId);
+          } catch (e) {
+            console.error("❌ Error rendering Turnstile:", e);
+            document.getElementById("error").style.display = "block";
+            document.getElementById("error").textContent = "Failed to load verification. Please refresh the page.";
           }
         }
+        
+        function proceedWithoutTurnstile() {
+          console.log("🔍 Proceeding without Turnstile, redirecting to /verify?nonce=" + nonce);
+          window.location.href = "/verify?nonce=" + nonce;
+        }
+        
+        async function verifyTurnstile(token) {
+          console.log("🔍 verifyTurnstile called with token:", token ? "exists" : "missing", "nonce:", nonce);
+          
+          try {
+            console.log("🔍 Sending request to /verify-turnstile");
+            const response = await fetch("/verify-turnstile", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                token: token,
+                nonce: nonce
+              })
+            });
+            
+            console.log("🔍 Response status:", response.status);
+            
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+              console.error("❌ Response not OK:", errorData);
+              document.getElementById("error").style.display = "block";
+              document.getElementById("error").textContent = errorData.error || "Verification failed";
+              if (turnstileWidgetId) {
+                turnstile.reset(turnstileWidgetId);
+              }
+              return;
+            }
+            
+            const data = await response.json();
+            console.log("🔍 Turnstile response:", data);
+            
+            if (data.success) {
+              if (!data.token || !data.hash || !data.uid || !data.timestamp || !data.signature) {
+                console.error("❌ Missing data in response:", data);
+                document.getElementById("error").style.display = "block";
+                document.getElementById("error").textContent = "Verification response incomplete. Please try again.";
+                if (turnstileWidgetId) {
+                  turnstile.reset(turnstileWidgetId);
+                }
+                return;
+              }
+              
+              const params = new URLSearchParams({
+                token: data.token,
+                hash: data.hash,
+                uid: data.uid,
+                timestamp: data.timestamp,
+                signature: data.signature
+              });
+              
+              const redirectUrl = "/?" + params.toString();
+              console.log("🔍 Redirecting to:", redirectUrl);
+              
+              setTimeout(() => {
+                window.location.href = redirectUrl;
+              }, 100);
+            } else {
+              console.error("❌ Verification failed:", data.error);
+              document.getElementById("error").style.display = "block";
+              document.getElementById("error").textContent = data.error || "Verification failed";
+              if (turnstileWidgetId) {
+                turnstile.reset(turnstileWidgetId);
+              }
+            }
+          } catch (e) {
+            console.error("❌ Network error:", e);
+            document.getElementById("error").style.display = "block";
+            document.getElementById("error").textContent = "Network error: " + e.message + ". Please try again.";
+            if (turnstileWidgetId) {
+              turnstile.reset(turnstileWidgetId);
+            }
+          }
+        }
+        
+        if (typeof turnstile !== "undefined") {
+          initTurnstile();
+        } else {
+          window.addEventListener("load", function() {
+            if (typeof turnstile !== "undefined") {
+              initTurnstile();
+            } else {
+              setTimeout(proceedWithoutTurnstile, 2000);
+            }
+          });
+        }
+        
+        setTimeout(function() {
+          if (!turnstileSiteKey) {
+            proceedWithoutTurnstile();
+          }
+        }, 3000);
       </script>
     </body>
     </html>
   `);
 });
 
-app.post("/verify-turnstile", async (req, res) => {
-  const { nonce, turnstileToken } = req.body;
-  const ip = getClientIP(req);
-  
-  if (!nonce || !turnstileToken) {
-    console.log("❌ Missing nonce or turnstileToken - IP:", ip);
-    return res.status(403).json({ error: "Missing parameters" });
-  }
-  
-  if (!nonceStore.has(nonce)) {
-    console.log("❌ Invalid nonce - IP:", ip);
-    return res.status(403).json({ error: "Invalid nonce" });
-  }
-  
-  const nonceData = nonceStore.get(nonce);
-  
-  if (nonceData.used) {
-    console.log("❌ Nonce already used - IP:", ip);
-    return res.status(403).json({ error: "Nonce already used" });
-  }
-  
-  if (Date.now() > nonceData.expiresAt) {
-    console.log("❌ Nonce expired - IP:", ip);
-    nonceStore.delete(nonce);
-    return res.status(403).json({ error: "Nonce expired" });
-  }
-  
-  if (!isSameSubnet(nonceData.ip, ip)) {
-    console.log("⚠️ IP subnet mismatch - stored IP:", nonceData.ip, "request IP:", ip, "but allowing with soft check");
-  }
-  
-  const turnstileValid = await verifyTurnstile(turnstileToken, ip);
-  
-  if (!turnstileValid) {
-    console.log("❌ Turnstile verification failed - IP:", ip);
-    return res.status(403).json({ error: "Turnstile verification failed" });
-  }
-  
-  const sessionId = generateSessionId();
-  const expiresAt = Date.now() + SESSION_TIMEOUT;
-  
-  nonceData.used = true;
-  nonceStore.delete(nonce);
-  
-  verifiedSessions.set(sessionId, {
-    ip: ip,
-    createdAt: Date.now(),
-    expiresAt: expiresAt
-  });
-  
-  setTimeout(() => {
-    verifiedSessions.delete(sessionId);
-  }, SESSION_TIMEOUT);
-  
-  console.log("✅ Verification successful - IP:", ip, "sessionId:", sessionId.substring(0, 8) + "...");
-  
-  return res.json({ session: sessionId });
-});
-
 app.get("/", (req, res) => {
-  const sessionId = req.query.session;
-  const ip = getClientIP(req);
+  const token = req.query.token;
+  const hash = req.query.hash;
+  const uid = req.query.uid;
+  const timestamp = req.query.timestamp;
+  const signature = req.query.signature;
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
-  if (!sessionId) {
-    console.log("⚠️ No session ID, redirecting to start - IP:", ip);
-    return res.redirect("/start");
-  }
+  console.log("🔍 / endpoint - token:", token ? "exists" : "missing", "hash:", hash ? "exists" : "missing", "uid:", uid ? "exists" : "missing", "referer:", ref);
   
-  if (!verifiedSessions.has(sessionId)) {
-    console.log("❌ Invalid session ID - IP:", ip);
+  if (ref && ref.toLowerCase().includes("bypass.vip")) {
+    console.log("❌ Bypass.vip detected - IP:", ip);
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  const session = verifiedSessions.get(sessionId);
+  if (token) {
+    const verification = verificationTokens.get(token);
+    if (verification && Date.now() <= verification.expiresAt) {
+      console.log("✅ Valid token found, skipping referrer check");
+    }
+  }
   
-  if (Date.now() > session.expiresAt) {
-    console.log("❌ Session expired - IP:", ip);
-    verifiedSessions.delete(sessionId);
+  if (!token) {
+    try {
+      if (ref && ref.trim() !== "") {
+        const refUrlObj = new URL(ref);
+        const refHostname = refUrlObj.hostname.toLowerCase();
+        const refPath = refUrlObj.pathname.toLowerCase();
+        
+        if (refHostname.includes("linkvertise.com")) {
+          if (!refPath || refPath === "/" || refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase())) {
+            return res.redirect("/verify?ref=" + encodeURIComponent(ref));
+          }
+        }
+      }
+    } catch (e) {
+    }
+    console.log("❌ No token provided");
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
-  if (!isSameSubnet(session.ip, ip)) {
-    console.log("⚠️ Session IP subnet mismatch - stored IP:", session.ip, "request IP:", ip, "but allowing with soft check");
+  const verification = verificationTokens.get(token);
+  
+  if (!verification) {
+    console.log("❌ Invalid or expired token - token:", token, "available tokens:", Array.from(verificationTokens.keys()));
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  if (Date.now() > verification.expiresAt) {
+    console.log("❌ Token expired - expiresAt:", verification.expiresAt, "now:", Date.now());
+    verificationTokens.delete(token);
+    return res.redirect("https://kamscriptsbypass.xo.je");
+  }
+  
+  console.log("✅ Token is valid, proceeding to key page");
+  
+  if (uid && timestamp && signature) {
+    if (verification.uid && verification.timestamp && verification.signature) {
+      if (verification.uid !== uid || verification.timestamp !== parseInt(timestamp)) {
+        console.log("⚠️ HMAC data mismatch but token is valid, allowing access");
+      } else if (!verifyHMAC(uid, timestamp, signature)) {
+        console.log("⚠️ HMAC signature invalid but token is valid, allowing access");
+      } else {
+        console.log("✅ HMAC verification passed");
+      }
+    }
+  }
+  
+  if (hash) {
+    const hashData = hashTokens.get(hash);
+    if (!hashData || hashData.token !== token) {
+      console.log("⚠️ Hash invalid but token is valid, allowing access");
+    } else if (Date.now() > hashData.expiresAt) {
+      console.log("⚠️ Hash expired but token is valid, allowing access");
+    } else {
+      console.log("✅ Hash verification passed");
+    }
   }
   
   if (!checkRateLimit(ip)) {
-    console.log("❌ Rate limit exceeded - IP:", ip);
+    console.log("❌ Rate limit aşıldı - IP:", ip);
+    verificationTokens.delete(token);
+    if (hash) {
+      hashTokens.delete(hash);
+    }
     return res.redirect("https://kamscriptsbypass.xo.je");
   }
   
   const key = getCachedTenMinuteKey();
   const timeLeft = getCurrentKeyBlockEndTime();
   
-  verifiedSessions.delete(sessionId);
+  verificationTokens.delete(token);
+  if (hash) {
+    hashTokens.delete(hash);
+  }
   
-  console.log("✅ Key displayed - IP:", ip);
+  console.log("✅ Key page displayed - IP:", ip);
   
   return res.send(`
     <!DOCTYPE html>
@@ -496,6 +690,22 @@ app.get("/", (req, res) => {
       <script>
         if (window.top !== window.self) {
           window.top.location.href = "https://kamscriptsbypass.xo.je";
+        }
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const hasToken = urlParams.has("token");
+        
+        if (!hasToken) {
+          const docRef = document.referrer || "";
+          if (!docRef || !docRef.toLowerCase().includes("linkvertise.com")) {
+            window.location.href = "https://kamscriptsbypass.xo.je";
+          }
+        }
+        
+        if (window.navigator.userAgent.includes("Tampermonkey") || 
+            window.navigator.userAgent.includes("Greasemonkey") || 
+            window.navigator.userAgent.includes("Violentmonkey")) {
+          window.location.href = "https://kamscriptsbypass.xo.je";
         }
       </script>
       <div style="background:#222; display:inline-block; padding:30px; border-radius:15px; box-shadow:0 0 20px rgba(255,215,0,0.4); max-width:600px; width:100%">
@@ -542,10 +752,57 @@ app.get("/", (req, res) => {
 });
 
 app.get("/raw", (req, res) => {
-  const ip = getClientIP(req);
+  const ref = req.get("referer") || req.get("referrer") || "";
+  const ua = req.get("user-agent") || "";
+  const ip = req.headers["x-forwarded-for"] || req.connection.remoteAddress;
   
   if (!checkRateLimit(ip)) {
     return res.status(429).send("Rate limit exceeded");
+  }
+  
+  if (ua) {
+    const isBrowser = (ua.includes("Mozilla") && ua.includes("Chrome")) || 
+                      (ua.includes("Mozilla") && ua.includes("Safari")) ||
+                      (ua.includes("Mozilla") && ua.includes("Firefox")) ||
+                      (ua.includes("Edge"));
+    const isExecutor = ua.includes("Roblox") || 
+                       ua.includes("executor") || 
+                       ua.includes("script") ||
+                       ua.includes("HttpService") ||
+                       ua.length < 20 ||
+                       !ua.includes("Mozilla");
+    
+    if (isExecutor) {
+      res.set("Content-Type", "text/plain");
+      res.set("Access-Control-Allow-Origin", "*");
+      return res.send(getCachedTenMinuteKey());
+    }
+    
+    if (isBrowser && !isExecutor) {
+      if (!ref || ref.trim() === "") {
+        return res.status(403).send("Access denied");
+      }
+      
+      try {
+        const refUrlObj = new URL(ref);
+        const refHostname = refUrlObj.hostname.toLowerCase();
+        const refPath = refUrlObj.pathname.toLowerCase();
+        
+        if (!refHostname.includes("linkvertise.com")) {
+          return res.status(403).send("Access denied");
+        }
+        
+        if (refPath && !refPath.includes(ALLOWED_LINKVERTISE_PATH.toLowerCase()) && refPath !== "/") {
+          return res.status(403).send("Access denied");
+        }
+      } catch (e) {
+        return res.status(403).send("Access denied");
+      }
+    }
+  } else {
+    res.set("Content-Type", "text/plain");
+    res.set("Access-Control-Allow-Origin", "*");
+    return res.send(getCachedTenMinuteKey());
   }
   
   res.set("Content-Type", "text/plain");
@@ -555,16 +812,24 @@ app.get("/raw", (req, res) => {
 
 setInterval(() => {
   const now = Date.now();
-  for (const [nonce, data] of nonceStore.entries()) {
+  for (const [token, data] of verificationTokens.entries()) {
     if (now > data.expiresAt) {
-      nonceStore.delete(nonce);
+      verificationTokens.delete(token);
+      if (data.hash) {
+        hashTokens.delete(data.hash);
+      }
     }
   }
-  for (const [sessionId, session] of verifiedSessions.entries()) {
-    if (now > session.expiresAt) {
-      verifiedSessions.delete(sessionId);
+  for (const [hash, data] of hashTokens.entries()) {
+    if (now > data.expiresAt) {
+      hashTokens.delete(hash);
+    }
+  }
+  for (const [nonce, data] of nonceTokens.entries()) {
+    if (now > data.expiresAt) {
+      nonceTokens.delete(nonce);
     }
   }
 }, 60000);
 
-app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with secure nonce + Turnstile system"));
+app.listen(3000, () => console.log("🚀 KamScripts Premium Key Server running with advanced bypass protection"));

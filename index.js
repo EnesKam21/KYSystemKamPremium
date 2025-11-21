@@ -180,11 +180,19 @@ app.get("/start", (req, res) => {
     nonceStore.delete(nonce);
   }, NONCE_TIMEOUT);
   
+  const redirectUrl = `${req.protocol}://${req.get("host")}/verify?nonce=${encodeURIComponent(nonce)}`;
   const linkvertiseUrl = new URL(LINKVERTISE_URL);
-  linkvertiseUrl.searchParams.set("nonce", nonce);
-  linkvertiseUrl.searchParams.set("redirect", `${req.protocol}://${req.get("host")}/verify`);
   
-  console.log("✅ Nonce generated - IP:", ip, "nonce:", nonce.substring(0, 8) + "...");
+  if (linkvertiseUrl.searchParams.has("r")) {
+    linkvertiseUrl.searchParams.set("r", redirectUrl);
+  } else if (linkvertiseUrl.searchParams.has("redirect")) {
+    linkvertiseUrl.searchParams.set("redirect", redirectUrl);
+  } else {
+    linkvertiseUrl.searchParams.set("r", redirectUrl);
+  }
+  
+  console.log("✅ Nonce generated - IP:", ip, "nonce:", nonce.substring(0, 8) + "...", "redirect URL:", redirectUrl);
+  console.log("🔍 Linkvertise URL:", linkvertiseUrl.toString());
   
   return res.redirect(linkvertiseUrl.toString());
 });

@@ -180,18 +180,23 @@ app.get("/start", (req, res) => {
     nonceStore.delete(nonce);
   }, NONCE_TIMEOUT);
   
-  const redirectUrl = `${req.protocol}://${req.get("host")}/verify?nonce=${encodeURIComponent(nonce)}`;
-  const linkvertiseUrl = new URL(LINKVERTISE_URL);
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const redirectUrl = `${baseUrl}/verify?nonce=${encodeURIComponent(nonce)}`;
   
-  if (linkvertiseUrl.searchParams.has("r")) {
-    linkvertiseUrl.searchParams.set("r", redirectUrl);
-  } else if (linkvertiseUrl.searchParams.has("redirect")) {
-    linkvertiseUrl.searchParams.set("redirect", redirectUrl);
-  } else {
-    linkvertiseUrl.searchParams.set("r", redirectUrl);
+  let linkvertiseUrl;
+  try {
+    linkvertiseUrl = new URL(LINKVERTISE_URL);
+  } catch (e) {
+    console.log("❌ Invalid LINKVERTISE_URL:", LINKVERTISE_URL);
+    return res.status(500).send("Invalid Linkvertise URL configuration");
   }
   
-  console.log("✅ Nonce generated - IP:", ip, "nonce:", nonce.substring(0, 8) + "...", "redirect URL:", redirectUrl);
+  linkvertiseUrl.searchParams.delete("r");
+  linkvertiseUrl.searchParams.delete("redirect");
+  linkvertiseUrl.searchParams.set("r", redirectUrl);
+  
+  console.log("✅ Nonce generated - IP:", ip, "nonce:", nonce.substring(0, 8) + "...");
+  console.log("🔍 Redirect URL:", redirectUrl);
   console.log("🔍 Linkvertise URL:", linkvertiseUrl.toString());
   
   return res.redirect(linkvertiseUrl.toString());
